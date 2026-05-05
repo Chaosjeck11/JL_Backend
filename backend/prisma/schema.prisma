@@ -34,3 +34,47 @@ model Member {
   role Role @relation(fields: [roleId], references: [id])
 }
 
+// ── Finance module ────────────────────────────────────────────────────────────
+
+enum TransactionType {
+  EINZAHLUNG
+  AUSZAHLUNG
+  RUECKBUCHUNG
+}
+
+model BusinessYear {
+  id           Int           @id @default(autoincrement())
+  year         Int           @unique
+  carryOver    Float         @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
+}
+
+model Category {
+  id           Int           @id @default(autoincrement())
+  name         String        @unique
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
+}
+
+model Transaction {
+  id                   Int             @id @default(autoincrement())
+  date                 DateTime
+  description          String
+  type                 TransactionType
+  amount               Float
+  categoryId           Int
+  businessYearId       Int
+  relatedTransactionId Int?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  category           Category      @relation(fields: [categoryId], references: [id])
+  businessYear       BusinessYear  @relation(fields: [businessYearId], references: [id])
+  relatedTransaction Transaction?  @relation("Rueckbuchung", fields: [relatedTransactionId], references: [id])
+  reversals          Transaction[] @relation("Rueckbuchung")
+}
+
