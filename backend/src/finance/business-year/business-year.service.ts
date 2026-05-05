@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
 } from "@nestjs/common";
+import { TransactionType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateBusinessYearDto } from "./dto/create-business-year.dto";
 import { UpdateBusinessYearDto } from "./dto/update-business-year.dto";
@@ -19,13 +20,24 @@ export class BusinessYearService {
 
   async findOne(id: number) {
     const businessYear = await this.findOneOrFail(id);
-    const { totalIncome, totalExpenses } = await this.aggregateTotals(id);
-    const balance = businessYear.carryOver + totalIncome - totalExpenses;
+    const { totalIncome, totalExpenses, reversalNet } =
+      await this.aggregateTotals(id);
+    const balance =
+      businessYear.carryOver + totalIncome - totalExpenses + reversalNet;
 
     return { ...businessYear, totalIncome, totalExpenses, balance };
   }
 
   async create(dto: CreateBusinessYearDto) {
+    const existing = await this.prisma.businessYear.findUnique({
+      where: { year: dto.year },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `Geschäftsjahr ${dto.year} existiert bereits.`,
+      );
+    }
+
     let carryOver = dto.carryOver ?? 0;
 
     const prevYear = await this.prisma.businessYear.findUnique({
@@ -33,10 +45,10 @@ export class BusinessYearService {
     });
 
     if (prevYear) {
-      const { totalIncome, totalExpenses } = await this.aggregateTotals(
-        prevYear.id,
-      );
-      carryOver = prevYear.carryOver + totalIncome - totalExpenses;
+      const { totalIncome, totalExpenses, reversalNet } =
+        await this.aggregateTotals(prevYear.id);
+      carryOver =
+        prevYear.carryOver + totalIncome - totalExpenses + reversalNet;
     }
 
     return this.prisma.businessYear.create({
@@ -82,7 +94,7 @@ export class BusinessYearService {
   }
 
   private async aggregateTotals(businessYearId: number) {
-    const [incomeAgg, expenseAgg] = await Promise.all([
+    const [incomeAgg, expenseAgg, reversals] = await Promise.all([
       this.prisma.transaction.aggregate({
         where: { businessYearId, type: "EINZAHLUNG" },
         _sum: { amount: true },
@@ -91,11 +103,26 @@ export class BusinessYearService {
         where: { businessYearId, type: "AUSZAHLUNG" },
         _sum: { amount: true },
       }),
+      this.prisma.transaction.findMany({
+        where: { businessYearId, type: "RUECKBUCHUNG" },
+        include: { relatedTransaction: { select: { type: true } } },
+      }),
     ]);
+
+    let reversalNet = 0;
+    for (const tx of reversals) {
+      const originalType = tx.relatedTransaction?.type;
+      if (originalType === TransactionType.AUSZAHLUNG) {
+        reversalNet += tx.amount;
+      } else if (originalType === TransactionType.EINZAHLUNG) {
+        reversalNet -= tx.amount;
+      }
+    }
 
     return {
       totalIncome: incomeAgg._sum.amount ?? 0,
       totalExpenses: expenseAgg._sum.amount ?? 0,
+      reversalNet,
     };
   }
 }

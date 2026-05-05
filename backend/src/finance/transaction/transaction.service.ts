@@ -82,6 +82,10 @@ export class TransactionService {
           "Rückbuchungen können nicht selbst zurückgebucht werden.",
         );
       }
+    } else if (dto.relatedTransactionId != null) {
+      throw new BadRequestException(
+        "relatedTransactionId darf nur bei Rückbuchungen gesetzt werden.",
+      );
     }
 
     return this.prisma.transaction.create({
