@@ -5,27 +5,27 @@ const prisma = new PrismaClient();
 // ── Kategorien ────────────────────────────────────────────────────────────────
 
 const DEFAULT_CATEGORIES = [
-  { name: "Spende", description: "Spendeneinnahmen" },
-  { name: "Mitgliedsbeitrag", description: "Beiträge der Vereinsmitglieder" },
-  { name: "Barzahlung", description: "Bare Ein- oder Auszahlungen" },
-  { name: "Ausgabe", description: "Allgemeine Ausgaben" },
-  { name: "Übertrag", description: "Jahresübertrag aus dem Vorjahr" },
-  { name: "Sonstiges", description: "Sonstige Buchungen" },
+  { name: "Spende", description: "Spendeneinnahmen", isMitgliedsbeitrag: false },
+  { name: "Mitgliedsbeitrag", description: "Beiträge der Vereinsmitglieder", isMitgliedsbeitrag: true },
+  { name: "Barzahlung", description: "Bare Ein- oder Auszahlungen", isMitgliedsbeitrag: false },
+  { name: "Ausgabe", description: "Allgemeine Ausgaben", isMitgliedsbeitrag: false },
+  { name: "Übertrag", description: "Jahresübertrag aus dem Vorjahr", isMitgliedsbeitrag: false },
+  { name: "Sonstiges", description: "Sonstige Buchungen", isMitgliedsbeitrag: false },
 ];
 
 async function seedCategories() {
-  let created = 0;
+  let processed = 0;
 
   for (const cat of DEFAULT_CATEGORIES) {
-    const result = await prisma.category.upsert({
+    await prisma.category.upsert({
       where: { name: cat.name },
-      update: {},
+      update: { isMitgliedsbeitrag: cat.isMitgliedsbeitrag },
       create: cat,
     });
-    if (result.name === cat.name) created++;
+    processed++;
   }
 
-  console.log(`[Kategorien] ${created} verarbeitet (upsert).`);
+  console.log(`[Kategorien] ${processed} verarbeitet (upsert).`);
 }
 
 // ── Kassenbuchdaten ───────────────────────────────────────────────────────────
@@ -44,7 +44,6 @@ interface BusinessYearSeed {
   transactions: TransactionSeed[];
 }
 
-// carryOver 2025 = 0 + (500 + 40 + 35) - 456 = 119 (entspricht dem Saldo aus 2023)
 const BUSINESS_YEARS: BusinessYearSeed[] = [
   {
     year: 2023,
@@ -108,10 +107,7 @@ async function seedFinanceData() {
 
     for (const tx of byData.transactions) {
       const existing = await prisma.transaction.findFirst({
-        where: {
-          description: tx.description,
-          businessYearId: businessYear.id,
-        },
+        where: { description: tx.description, businessYearId: businessYear.id },
       });
 
       if (existing) {
@@ -145,9 +141,7 @@ async function seedFinanceData() {
 
 // ── Mitglieder ────────────────────────────────────────────────────────────────
 // TODO: Mitgliederdaten aus dem Excel-Kassenbuch importieren, sobald die
-//       vollständige Mitgliederliste vorliegt. Das MembersModule (src/members/)
-//       ist bereits implementiert – hier analog zu seedFinanceData() vorgehen
-//       und prisma.member.upsert({ where: { email }, ... }) nutzen.
+//       vollständige Mitgliederliste vorliegt.
 
 // ── Einstiegspunkt ────────────────────────────────────────────────────────────
 

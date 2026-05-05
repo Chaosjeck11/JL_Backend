@@ -8,14 +8,35 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { CreateBusinessYearDto } from "./dto/create-business-year.dto";
 import { UpdateBusinessYearDto } from "./dto/update-business-year.dto";
 
+const BEITRAG_JL = 35;
+const BEITRAG_KG = 65;
+
+function byDates(year: number) {
+  return {
+    startDate: new Date(year, 1, 1),      // Feb 1 of named year
+    endDate: new Date(year + 1, 0, 31),   // Jan 31 of following year
+  };
+}
+
+function beitragsBetraege(member: {
+  u18: boolean;
+  schuelerStudentAzubi: boolean;
+  bereitsMitglied: boolean;
+}) {
+  const isReduced =
+    member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
+  return { betragJL: BEITRAG_JL, betragKG: isReduced ? 0 : BEITRAG_KG };
+}
+
 @Injectable()
 export class BusinessYearService {
   constructor(private prisma: PrismaService) {}
 
-  findAll() {
-    return this.prisma.businessYear.findMany({
+  async findAll() {
+    const years = await this.prisma.businessYear.findMany({
       orderBy: { year: "desc" },
     });
+    return years.map((by) => ({ ...by, ...byDates(by.year) }));
   }
 
   async findOne(id: number) {
@@ -25,7 +46,36 @@ export class BusinessYearService {
       await this.aggregateTotals(id);
     const balance = carryOver + totalIncome - totalExpenses + reversalNet;
 
-    return { ...businessYear, carryOver, totalIncome, totalExpenses, balance };
+    const mitgliedsbeitraege = await this.prisma.mitgliedsbeitrag.findMany({
+      where: { businessYearId: id },
+      include: {
+        member: {
+          select: {
+            id: true,
+            firstname: true,
+            lastname: true,
+            email: true,
+            active: true,
+            inactiveSince: true,
+            u18: true,
+            bereitsMitglied: true,
+            schuelerStudentAzubi: true,
+            berufstaetig: true,
+          },
+        },
+      },
+      orderBy: { member: { lastname: "asc" } },
+    });
+
+    return {
+      ...businessYear,
+      ...byDates(businessYear.year),
+      carryOver,
+      totalIncome,
+      totalExpenses,
+      balance,
+      mitgliedsbeitraege,
+    };
   }
 
   async create(dto: CreateBusinessYearDto) {
@@ -39,11 +89,9 @@ export class BusinessYearService {
     }
 
     let carryOver = dto.carryOver ?? 0;
-
     const newestYear = await this.prisma.businessYear.findFirst({
       orderBy: { year: "desc" },
     });
-
     if (newestYear) {
       const liveCarryOver = await this.computeCarryOver(newestYear.year);
       const { totalIncome, totalExpenses, reversalNet } =
@@ -51,18 +99,38 @@ export class BusinessYearService {
       carryOver = liveCarryOver + totalIncome - totalExpenses + reversalNet;
     }
 
-    return this.prisma.businessYear.create({
+    const businessYear = await this.prisma.businessYear.create({
       data: { year: dto.year, carryOver },
     });
+
+    // Create Mitgliedsbeitrag for all members who were active at the start of this year
+    const { startDate } = byDates(dto.year);
+    const members = await this.prisma.member.findMany({
+      where: {
+        OR: [
+          { active: true },
+          { active: false, inactiveSince: { gte: startDate } },
+        ],
+      },
+    });
+
+    for (const member of members) {
+      const { betragJL, betragKG } = beitragsBetraege(member);
+      await this.prisma.mitgliedsbeitrag.create({
+        data: { memberId: member.id, businessYearId: businessYear.id, betragJL, betragKG },
+      });
+    }
+
+    return this.findOne(businessYear.id);
   }
 
   async update(id: number, dto: UpdateBusinessYearDto) {
     await this.findOneOrFail(id);
-
-    return this.prisma.businessYear.update({
+    await this.prisma.businessYear.update({
       where: { id },
       data: { carryOver: dto.carryOver },
     });
+    return this.findOne(id);
   }
 
   async remove(id: number) {
@@ -71,13 +139,13 @@ export class BusinessYearService {
     const transactionCount = await this.prisma.transaction.count({
       where: { businessYearId: id },
     });
-
     if (transactionCount > 0) {
       throw new ConflictException(
         "Geschäftsjahr kann nicht gelöscht werden, da noch Transaktionen vorhanden sind.",
       );
     }
 
+    await this.prisma.mitgliedsbeitrag.deleteMany({ where: { businessYearId: id } });
     return this.prisma.businessYear.delete({ where: { id } });
   }
 
@@ -85,19 +153,10 @@ export class BusinessYearService {
     const businessYear = await this.prisma.businessYear.findUnique({
       where: { id },
     });
-
-    if (!businessYear) {
-      throw new NotFoundException("Geschäftsjahr nicht gefunden.");
-    }
-
+    if (!businessYear) throw new NotFoundException("Geschäftsjahr nicht gefunden.");
     return businessYear;
   }
 
-  /**
-   * Berechnet den carryOver für ein Jahr live aus allen Vorjahren.
-   * Seed: gespeicherter carryOver des ältesten Jahres (manuell pflegbar via update).
-   * Für jedes folgende Vorjahr: running = running + Netto des Jahres.
-   */
   private async computeCarryOver(year: number): Promise<number> {
     const priorYears = await this.prisma.businessYear.findMany({
       where: { year: { lt: year } },
@@ -110,13 +169,11 @@ export class BusinessYearService {
     }
 
     let running = priorYears[0].carryOver;
-
     for (const py of priorYears) {
       const { totalIncome, totalExpenses, reversalNet } =
         await this.aggregateTotals(py.id);
       running = running + totalIncome - totalExpenses + reversalNet;
     }
-
     return running;
   }
 
@@ -139,11 +196,8 @@ export class BusinessYearService {
     let reversalNet = 0;
     for (const tx of reversals) {
       const originalType = tx.relatedTransaction?.type;
-      if (originalType === TransactionType.AUSZAHLUNG) {
-        reversalNet += tx.amount;
-      } else if (originalType === TransactionType.EINZAHLUNG) {
-        reversalNet -= tx.amount;
-      }
+      if (originalType === TransactionType.AUSZAHLUNG) reversalNet += tx.amount;
+      else if (originalType === TransactionType.EINZAHLUNG) reversalNet -= tx.amount;
     }
 
     return {

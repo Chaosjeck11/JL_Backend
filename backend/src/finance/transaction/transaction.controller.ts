@@ -30,11 +30,13 @@ export class TransactionController {
   findAll(
     @Query("businessYearId") businessYearId?: string,
     @Query("categoryId") categoryId?: string,
+    @Query("memberId") memberId?: string,
     @Query("type") type?: TransactionType,
   ) {
     return this.transactionService.findAll({
       businessYearId: businessYearId ? parseInt(businessYearId, 10) : undefined,
       categoryId: categoryId ? parseInt(categoryId, 10) : undefined,
+      memberId: memberId ? parseInt(memberId, 10) : undefined,
       type,
     });
   }

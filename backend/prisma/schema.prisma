@@ -15,28 +15,28 @@ model Role {
 }
 
 model Member {
-  id           Int      @id @default(autoincrement())
-  firstname    String
-  lastname     String
-  birthday     DateTime?
-  email        String   @unique
-
-  passwordHash String
-
-  phone        String?
-  address      String?
+  id                   Int       @id @default(autoincrement())
+  firstname            String
+  lastname             String
+  birthday             DateTime?
+  email                String    @unique
+  passwordHash         String
+  phone                String?
+  address              String?
   roleId               Int
-  accessLevel          Int      @default(0)
+  accessLevel          Int       @default(0)
   avatarPath           String?
-  active               Boolean  @default(true)
-  joinedAt             DateTime @default(now())
+  active               Boolean   @default(true)
+  inactiveSince        DateTime?
+  joinedAt             DateTime  @default(now())
+  u18                  Boolean   @default(false)
+  bereitsMitglied      Boolean   @default(false)
+  schuelerStudentAzubi Boolean   @default(false)
+  berufstaetig         Boolean   @default(false)
 
-  u18                  Boolean  @default(false)
-  bereitsMitglied      Boolean  @default(false)
-  schuelerStudentAzubi Boolean  @default(false)
-  berufstaetig         Boolean  @default(false)
-
-  role Role @relation(fields: [roleId], references: [id])
+  role               Role               @relation(fields: [roleId], references: [id])
+  transactions       Transaction[]
+  mitgliedsbeitraege Mitgliedsbeitrag[]
 }
 
 // ── Finance module ────────────────────────────────────────────────────────────
@@ -47,22 +47,30 @@ enum TransactionType {
   RUECKBUCHUNG
 }
 
+enum BeitragStatus {
+  AUSSTEHEND
+  TEILWEISE
+  BEZAHLT
+}
+
 model BusinessYear {
-  id           Int           @id @default(autoincrement())
-  year         Int           @unique
-  carryOver    Float         @default(0)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  transactions Transaction[]
+  id                 Int                @id @default(autoincrement())
+  year               Int                @unique
+  carryOver          Float              @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  transactions       Transaction[]
+  mitgliedsbeitraege Mitgliedsbeitrag[]
 }
 
 model Category {
-  id           Int           @id @default(autoincrement())
-  name         String        @unique
-  description  String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  transactions Transaction[]
+  id                 Int           @id @default(autoincrement())
+  name               String        @unique
+  description        String?
+  isMitgliedsbeitrag Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  transactions       Transaction[]
 }
 
 model Transaction {
@@ -73,13 +81,32 @@ model Transaction {
   amount               Float
   categoryId           Int
   businessYearId       Int
+  memberId             Int?
   relatedTransactionId Int?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
   category           Category      @relation(fields: [categoryId], references: [id])
   businessYear       BusinessYear  @relation(fields: [businessYearId], references: [id])
+  member             Member?       @relation(fields: [memberId], references: [id])
   relatedTransaction Transaction?  @relation("Rueckbuchung", fields: [relatedTransactionId], references: [id])
   reversals          Transaction[] @relation("Rueckbuchung")
 }
 
+model Mitgliedsbeitrag {
+  id             Int           @id @default(autoincrement())
+  memberId       Int
+  businessYearId Int
+  betragJL       Float
+  betragKG       Float
+  bezahltJL      Float         @default(0)
+  bezahltKG      Float         @default(0)
+  status         BeitragStatus @default(AUSSTEHEND)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  member       Member       @relation(fields: [memberId], references: [id])
+  businessYear BusinessYear @relation(fields: [businessYearId], references: [id])
+
+  @@unique([memberId, businessYearId])
+}
