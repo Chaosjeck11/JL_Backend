@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Prisma, TransactionType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { BusinessYearService } from "../business-year/business-year.service";
 import { CreateTransactionDto } from "./dto/create-transaction.dto";
 import { UpdateTransactionDto } from "./dto/update-transaction.dto";
 
@@ -22,7 +23,10 @@ interface FindAllFilters {
 
 @Injectable()
 export class TransactionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private businessYearService: BusinessYearService,
+  ) {}
 
   findAll(filters: FindAllFilters = {}) {
     const where: Prisma.TransactionWhereInput = {};
@@ -56,6 +60,12 @@ export class TransactionService {
   }
 
   async create(dto: CreateTransactionDto) {
+    if (dto.businessYearId == null) {
+      throw new BadRequestException("businessYearId ist erforderlich.");
+    }
+    if (dto.categoryId == null) {
+      throw new BadRequestException("categoryId ist erforderlich.");
+    }
     if (dto.amount <= 0) {
       throw new BadRequestException("Der Betrag muss größer als 0 sein.");
     }
@@ -125,13 +135,7 @@ export class TransactionService {
   }
 
   async getRunningBalance(businessYearId: number) {
-    const businessYear = await this.prisma.businessYear.findUnique({
-      where: { id: businessYearId },
-    });
-
-    if (!businessYear) {
-      throw new NotFoundException("Geschäftsjahr nicht gefunden.");
-    }
+    const { carryOver } = await this.businessYearService.findOne(businessYearId);
 
     const transactions = await this.prisma.transaction.findMany({
       where: { businessYearId },
@@ -142,7 +146,7 @@ export class TransactionService {
       },
     });
 
-    let running = businessYear.carryOver;
+    let running = carryOver;
 
     return transactions.map((tx) => {
       if (tx.type === TransactionType.EINZAHLUNG) {

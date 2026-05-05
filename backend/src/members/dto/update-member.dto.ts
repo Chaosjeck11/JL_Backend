@@ -9,4 +9,9 @@ export class UpdateMemberDto {
   roleId?: number;
   accessLevel?: number;
   active?: boolean;
+
+  u18?: boolean;
+  bereitsMitglied?: boolean;
+  schuelerStudentAzubi?: boolean;
+  berufstaetig?: boolean;
 }

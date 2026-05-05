@@ -20,12 +20,12 @@ export class BusinessYearService {
 
   async findOne(id: number) {
     const businessYear = await this.findOneOrFail(id);
+    const carryOver = await this.computeCarryOver(businessYear.year);
     const { totalIncome, totalExpenses, reversalNet } =
       await this.aggregateTotals(id);
-    const balance =
-      businessYear.carryOver + totalIncome - totalExpenses + reversalNet;
+    const balance = carryOver + totalIncome - totalExpenses + reversalNet;
 
-    return { ...businessYear, totalIncome, totalExpenses, balance };
+    return { ...businessYear, carryOver, totalIncome, totalExpenses, balance };
   }
 
   async create(dto: CreateBusinessYearDto) {
@@ -40,15 +40,15 @@ export class BusinessYearService {
 
     let carryOver = dto.carryOver ?? 0;
 
-    const prevYear = await this.prisma.businessYear.findUnique({
-      where: { year: dto.year - 1 },
+    const newestYear = await this.prisma.businessYear.findFirst({
+      orderBy: { year: "desc" },
     });
 
-    if (prevYear) {
+    if (newestYear) {
+      const liveCarryOver = await this.computeCarryOver(newestYear.year);
       const { totalIncome, totalExpenses, reversalNet } =
-        await this.aggregateTotals(prevYear.id);
-      carryOver =
-        prevYear.carryOver + totalIncome - totalExpenses + reversalNet;
+        await this.aggregateTotals(newestYear.id);
+      carryOver = liveCarryOver + totalIncome - totalExpenses + reversalNet;
     }
 
     return this.prisma.businessYear.create({
@@ -91,6 +91,33 @@ export class BusinessYearService {
     }
 
     return businessYear;
+  }
+
+  /**
+   * Berechnet den carryOver für ein Jahr live aus allen Vorjahren.
+   * Seed: gespeicherter carryOver des ältesten Jahres (manuell pflegbar via update).
+   * Für jedes folgende Vorjahr: running = running + Netto des Jahres.
+   */
+  private async computeCarryOver(year: number): Promise<number> {
+    const priorYears = await this.prisma.businessYear.findMany({
+      where: { year: { lt: year } },
+      orderBy: { year: "asc" },
+    });
+
+    if (priorYears.length === 0) {
+      const self = await this.prisma.businessYear.findFirst({ where: { year } });
+      return self?.carryOver ?? 0;
+    }
+
+    let running = priorYears[0].carryOver;
+
+    for (const py of priorYears) {
+      const { totalIncome, totalExpenses, reversalNet } =
+        await this.aggregateTotals(py.id);
+      running = running + totalIncome - totalExpenses + reversalNet;
+    }
+
+    return running;
   }
 
   private async aggregateTotals(businessYearId: number) {

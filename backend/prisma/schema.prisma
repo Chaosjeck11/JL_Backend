@@ -25,11 +25,16 @@ model Member {
 
   phone        String?
   address      String?
-  roleId       Int
-  accessLevel  Int      @default(0)
-  avatarPath   String?
-  active       Boolean  @default(true)
-  joinedAt     DateTime @default(now())
+  roleId               Int
+  accessLevel          Int      @default(0)
+  avatarPath           String?
+  active               Boolean  @default(true)
+  joinedAt             DateTime @default(now())
+
+  u18                  Boolean  @default(false)
+  bereitsMitglied      Boolean  @default(false)
+  schuelerStudentAzubi Boolean  @default(false)
+  berufstaetig         Boolean  @default(false)
 
   role Role @relation(fields: [roleId], references: [id])
 }

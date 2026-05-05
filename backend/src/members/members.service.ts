@@ -42,6 +42,10 @@ export class MembersService {
         address: dto.address,
         roleId: dto.roleId,
         accessLevel: dto.accessLevel ?? 0,
+        u18: dto.u18 ?? false,
+        bereitsMitglied: dto.bereitsMitglied ?? false,
+        schuelerStudentAzubi: dto.schuelerStudentAzubi ?? false,
+        berufstaetig: dto.berufstaetig ?? false,
       },
     });
   }
