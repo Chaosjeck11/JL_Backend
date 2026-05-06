@@ -48,6 +48,7 @@ export class MembersService {
         lastname: dto.lastname,
         email: dto.email,
         passwordHash,
+        joinedAt: dto.joinedAt ? new Date(dto.joinedAt) : undefined,
         birthday: dto.birthday ? new Date(dto.birthday) : undefined,
         phone: dto.phone,
         address: dto.address,

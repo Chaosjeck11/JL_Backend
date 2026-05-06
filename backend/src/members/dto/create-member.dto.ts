@@ -4,6 +4,7 @@ export class CreateMemberDto {
   email: string;
   password: string;
 
+  joinedAt?: string;
   birthday?: string;
   phone?: string;
   address?: string;

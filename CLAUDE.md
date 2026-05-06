@@ -75,13 +75,13 @@ Belongs to a `Role` (many-to-one). Members are soft-deactivated via `active: fal
 | `accessLevel` | Int | default 0 |
 | `active` | Boolean | default true |
 | `inactiveSince` | DateTime? | set automatically on deactivate |
-| `joinedAt` | DateTime | default now() |
+| `joinedAt` | DateTime | default now(); settable on create |
 | `u18` | Boolean | default false |
 | `bereitsMitglied` | Boolean | default false — already member of parent org |
 | `schuelerStudentAzubi` | Boolean | default false |
 | `berufstaetig` | Boolean | default false |
 
-All fields except `id`, `joinedAt`, and `passwordHash` are editable via `PATCH /members/:id`.
+All fields except `id`, `joinedAt`, and `passwordHash` are editable via `PATCH /members/:id`. `joinedAt` can be set on creation but not updated afterwards.
 
 ### BusinessYear
 
@@ -143,7 +143,7 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 |--------|-------|-------------|-------------|
 | GET | `/members` | 0 | All members incl. role, mitgliedsbeitraege |
 | GET | `/members/:id` | 0 | Single member incl. role, mitgliedsbeitraege, transactions |
-| POST | `/members` | 5 | Create member (no auto-Beitrag) |
+| POST | `/members` | 5 | Create member; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
 | PATCH | `/members/:id` | 5 | Update any field except id/joinedAt/passwordHash; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
 | PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() |
 
