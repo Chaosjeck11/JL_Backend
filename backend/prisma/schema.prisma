@@ -28,7 +28,7 @@ model Member {
   avatarPath           String?
   active               Boolean   @default(true)
   inactiveSince        DateTime?
-  joinedAt             DateTime  
+  joinedAt             DateTime  @default(now())
   u18                  Boolean   @default(false)
   bereitsMitglied      Boolean   @default(false)
   schuelerStudentAzubi Boolean   @default(false)
