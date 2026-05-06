@@ -1,7 +1,7 @@
 services:
-  t-db:
+  db:
     image: postgres:16
-    container_name: jl-postgres-test
+    container_name: jl-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: jl_db
@@ -10,21 +10,21 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     networks:
-      - jl-net-t
+      - jl-net
 
-  t-backend:
+  backend:
     build: ./backend
-    container_name: jl-backend-test
+    container_name: jl-backend
     restart: unless-stopped
     env_file:
       - ./backend/.env
     depends_on:
-      - t-db
+      - db
     networks:
-      - jl-net-t
+      - jl-net
     ports:
       - "3000:3000"
 
 networks:
-  jl-net-t:
+  jl-net:
     driver: bridge
