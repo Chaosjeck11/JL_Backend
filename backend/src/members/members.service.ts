@@ -60,6 +60,21 @@ export class MembersService {
       },
     });
 
+    const isReduced = member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
+    const betragJL = 35;
+    const betragKG = isReduced ? 0 : 65;
+    const businessYears = await this.prisma.businessYear.findMany();
+
+    for (const by of businessYears) {
+      // Nur Jahre ab Beitrittsdatum: Geschäftsjahr endet 31.01. des Folgejahres
+      const byEnd = new Date(by.year + 1, 0, 31);
+      if (byEnd >= member.joinedAt) {
+        await this.prisma.mitgliedsbeitrag.create({
+          data: { memberId: member.id, businessYearId: by.id, betragJL, betragKG },
+        });
+      }
+    }
+
     return this.findOne(member.id);
   }
 
