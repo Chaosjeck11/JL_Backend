@@ -12,3 +12,4 @@ tmp/
 .cache/
 .vscode/
 .idea/
+docker-compose.yml

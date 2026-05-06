@@ -116,6 +116,8 @@ export class MembersService {
     const betragKG = isReduced ? 0 : 65;
     const retroactiveIds = new Set(dto.retroactiveYearIds ?? []);
     const businessYears = await this.prisma.businessYear.findMany();
+    const isReactivation = dto.active === true && !currentMember.active;
+    const today = new Date();
 
     for (const by of businessYears) {
       const applyBetrag = retroactiveIds.has(by.id);
@@ -133,7 +135,11 @@ export class MembersService {
             });
           }
         } else {
-          // Fehlender Eintrag: immer mit aktuellem Betrag erstellen
+          // Bei Reaktivierung: nur Jahre erstellen, die noch nicht vollständig abgelaufen sind
+          if (isReactivation) {
+            const byEnd = new Date(by.year + 1, 0, 31); // 31. Jan des Folgejahres
+            if (byEnd < today) continue;
+          }
           await this.prisma.mitgliedsbeitrag.create({
             data: { memberId: id, businessYearId: by.id, betragJL, betragKG },
           });
