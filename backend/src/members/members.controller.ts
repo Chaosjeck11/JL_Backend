@@ -27,6 +27,12 @@ export class MembersController {
     return this.members.findAll();
   }
 
+  @Get("roles")
+  @AccessLevel(0)
+  findAllRoles() {
+    return this.members.findAllRoles();
+  }
+
   // 🔍 Einzelnes Mitglied
   @Get(":id")
   @AccessLevel(0)

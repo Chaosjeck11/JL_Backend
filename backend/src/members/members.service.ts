@@ -195,6 +195,10 @@ export class MembersService {
     return this.findOne(id);
   }
 
+  findAllRoles() {
+    return this.prisma.role.findMany({ orderBy: { accessLevel: "asc" } });
+  }
+
   async deactivate(id: number) {
     await this.findOne(id);
     return this.prisma.member.update({
