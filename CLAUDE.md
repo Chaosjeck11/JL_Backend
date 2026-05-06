@@ -26,14 +26,14 @@ DATABASE_URL=postgresql://jl_user:jl_password@localhost:5432/jl_db
 JWT_SECRET=<secret>
 ```
 
-**Docker-Hinweis:** Der Container (`jl-backend`) enthält eine eigenständige Kopie des Quellcodes — kein Volume-Mount. Nach Code-Änderungen auf dem Host müssen Dateien explizit kopiert werden:
+**Docker-Hinweis:** Der Container (`jl-backend-t`) enthält eine eigenständige Kopie des Quellcodes — kein Volume-Mount. Nach Code-Änderungen auf dem Host müssen Dateien explizit kopiert werden. **Container-Updates führt ausschließlich der User durch** — Claude gibt nur die nötigen Befehle an:
 ```bash
-docker cp backend/src/... jl-backend:/app/src/...
-docker exec jl-backend sh -c "cd /app && npm run build"
-docker restart jl-backend
+docker cp backend/src/... jl-backend-t:/app/src/...
+docker exec jl-backend-t sh -c "cd /app && npm run build"
+docker restart jl-backend-t
 # Bei Schema-Änderungen zusätzlich:
-docker cp backend/prisma/schema.prisma jl-backend:/app/prisma/schema.prisma
-docker exec jl-backend sh -c "cd /app && ./node_modules/.bin/prisma db push"
+docker cp backend/prisma/schema.prisma jl-backend-t:/app/prisma/schema.prisma
+docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate dev --name <migration-name>"
 ```
 
 ## Architecture
@@ -57,7 +57,24 @@ Every protected route uses two guards applied together at the controller level:
 1. `AuthGuard("jwt")` — validates the Bearer token via `JwtStrategy`, attaches the decoded payload as `request.user`.
 2. `AccessLevelGuard` — reads the `@AccessLevel(n)` decorator on the handler and compares it against `request.user.accessLevel`. Access level `0` = any authenticated user; `5` = admin operations (create, update, delete).
 
+`accessLevel` is defined on the **Role**, not the Member. The JWT payload reads `member.role.accessLevel` at login time. Changing a member's role automatically changes their effective permissions on next login.
+
 ## Data model
+
+### Role
+
+Defines the permission level for a group of members. `accessLevel` is stored here — not on the Member.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `name` | String | unique |
+| `description` | String? | |
+| `accessLevel` | Int | default 0 |
+
+Seeded roles:
+- **Mitglied** — `accessLevel: 0` (einfaches Vereinsmitglied, read-only access)
+- **Admin** — `accessLevel: 5` (Systemadministrator, full access)
 
 ### Member
 
@@ -72,7 +89,6 @@ Belongs to a `Role` (many-to-one). Members are soft-deactivated via `active: fal
 | `birthday` | DateTime? | |
 | `phone`, `address`, `avatarPath` | String? | |
 | `roleId` | Int | FK → Role |
-| `accessLevel` | Int | default 0 |
 | `active` | Boolean | default true |
 | `inactiveSince` | DateTime? | set automatically on deactivate |
 | `joinedAt` | DateTime | default now(); settable on create |
@@ -81,7 +97,7 @@ Belongs to a `Role` (many-to-one). Members are soft-deactivated via `active: fal
 | `schuelerStudentAzubi` | Boolean | default false |
 | `berufstaetig` | Boolean | default false |
 
-All fields except `id`, `joinedAt`, and `passwordHash` are editable via `PATCH /members/:id`. `joinedAt` can be set on creation but not updated afterwards.
+All fields except `id`, `joinedAt`, and `passwordHash` are editable via `PATCH /members/:id`. `joinedAt` can be set on creation but not updated afterwards. `accessLevel` is **not** a Member field — it derives from the assigned Role.
 
 ### BusinessYear
 
@@ -103,6 +119,8 @@ Belongs to `BusinessYear`, `Category`, and optionally `Member`. The `type` enum:
 - `EINZAHLUNG` — income
 - `AUSZAHLUNG` — expense
 - `RUECKBUCHUNG` — reversal; requires `relatedTransactionId`. `type` and `amount` are immutable after creation.
+
+`tag` (optional, `PaymentTag` enum): payment method tag — `ONLINE` or `BAR`. Settable on create and updatable via PATCH.
 
 `memberId` (optional): when set on an `EINZAHLUNG` with `isMitgliedsbeitrag` category, the `Mitgliedsbeitrag` record for that member × year is updated automatically. On deletion, the record is recomputed from remaining transactions.
 
@@ -143,8 +161,8 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 |--------|-------|-------------|-------------|
 | GET | `/members` | 0 | All members incl. role, mitgliedsbeitraege |
 | GET | `/members/:id` | 0 | Single member incl. role, mitgliedsbeitraege, transactions |
-| POST | `/members` | 5 | Create member; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
-| PATCH | `/members/:id` | 5 | Update any field except id/joinedAt/passwordHash; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
+| POST | `/members` | 5 | Create member; required `roleId`; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
+| PATCH | `/members/:id` | 5 | Update any field except id/joinedAt/passwordHash/accessLevel; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
 | PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() |
 
 ### Finance — Business Years
@@ -174,8 +192,8 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/finance/transactions` | 0 | All; optional `?businessYearId=&categoryId=&memberId=&type=` |
 | GET | `/finance/transactions/balance/:businessYearId` | 0 | Running balance array (uses live carryOver) |
 | GET | `/finance/transactions/:id` | 0 | Single transaction incl. category, businessYear, member, reversals |
-| POST | `/finance/transactions` | 5 | Create with validation; updates Mitgliedsbeitrag if applicable |
-| PATCH | `/finance/transactions/:id` | 5 | date, description, categoryId, memberId |
+| POST | `/finance/transactions` | 5 | Create with validation; updates Mitgliedsbeitrag if applicable; optional `tag: ONLINE\|BAR` |
+| PATCH | `/finance/transactions/:id` | 5 | date, description, categoryId, memberId, tag (nullable) |
 | DELETE | `/finance/transactions/:id` | 5 | Only if no reversals; recomputes Mitgliedsbeitrag if applicable |
 
 ### Finance — Mitgliedsbeiträge
@@ -198,9 +216,10 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 ## Seeder (`src/seed.ts`)
 
 Idempotent — safe to run multiple times. Each section uses `upsert` or `findFirst`-guard:
-1. Default categories (6 entries, upsert by `name`; sets `isMitgliedsbeitrag: true` on "Mitgliedsbeitrag")
-2. BusinessYear 2023 with 4 transactions from the Kassenbuch Excel
-3. BusinessYear 2025 (carryOver 119) with 1 transaction
-4. Members — TODO, pending full member list
+1. Roles — upsert "Mitglied" (`accessLevel: 0`) and "Admin" (`accessLevel: 5`)
+2. Admin member — upsert `admin@jl.local` with role "Admin" (password: `admin123`)
+3. Default categories — upsert by `name`; sets `isMitgliedsbeitrag: true` on "Mitgliedsbeitrag"
+4. BusinessYears — creates all years from 2023 to current year if missing; generates Mitgliedsbeitrag records for active members
+5. Members — TODO, pending full member list
 
 **CORS:** Configured for `http://localhost:5173` and `http://127.0.0.1:5173` (Vite frontend).

@@ -105,7 +105,7 @@ export class BusinessYearService {
 
     // Beiträge nur für aktuell aktive Mitglieder erstellen
     const members = await this.prisma.member.findMany({
-      where: { active: true },
+      where: { active: true, excludeFromBeitrag: false },
     });
     for (const member of members) {
       const { betragJL, betragKG } = beitragsBetraege(member);

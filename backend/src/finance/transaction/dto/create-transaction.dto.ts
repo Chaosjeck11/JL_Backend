@@ -1,4 +1,4 @@
-import { TransactionType } from "@prisma/client";
+import { PaymentTag, TransactionType } from "@prisma/client";
 
 export class CreateTransactionDto {
   date: string;
@@ -9,4 +9,5 @@ export class CreateTransactionDto {
   businessYearId: number;
   memberId?: number;
   relatedTransactionId?: number;
+  tag?: PaymentTag;
 }

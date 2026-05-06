@@ -26,6 +26,65 @@ async function seedCategories() {
 }
 
 
+// ── Geschäftsjahre ────────────────────────────────────────────────────────────
+
+const FIRST_BUSINESS_YEAR = 2023;
+
+function currentBusinessYear(): number {
+  const now = new Date();
+  // Geschäftsjahr N startet am 1. Februar des Jahres N.
+  // Im Januar sind wir noch im Vorjahr.
+  return now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+}
+
+async function seedBusinessYears() {
+  const endYear = currentBusinessYear();
+  const activeMembers = await prisma.member.findMany({
+    where: { active: true, excludeFromBeitrag: false },
+  });
+
+  let created = 0;
+  let skipped = 0;
+
+  for (let year = FIRST_BUSINESS_YEAR; year <= endYear; year++) {
+    const existing = await prisma.businessYear.findUnique({ where: { year } });
+    if (existing) {
+      skipped++;
+      continue;
+    }
+
+    const businessYear = await prisma.businessYear.create({
+      data: { year, carryOver: 0 },
+    });
+
+    for (const member of activeMembers) {
+      const isReduced =
+        member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
+      await prisma.mitgliedsbeitrag.upsert({
+        where: {
+          memberId_businessYearId: {
+            memberId: member.id,
+            businessYearId: businessYear.id,
+          },
+        },
+        update: {},
+        create: {
+          memberId: member.id,
+          businessYearId: businessYear.id,
+          betragJL: 35,
+          betragKG: isReduced ? 0 : 65,
+        },
+      });
+    }
+
+    created++;
+  }
+
+  console.log(
+    `[Geschäftsjahre] ${created} erstellt, ${skipped} bereits vorhanden (${FIRST_BUSINESS_YEAR}–${endYear}).`,
+  );
+}
+
 // ── Mitglieder ────────────────────────────────────────────────────────────────
 // TODO: Mitgliederdaten aus dem Excel-Kassenbuch importieren, sobald die
 //       vollständige Mitgliederliste vorliegt.
@@ -33,10 +92,16 @@ async function seedCategories() {
 // ── System-Admin ──────────────────────────────────────────────────────────────
 
 async function seedAdminUser() {
+  await prisma.role.upsert({
+    where: { name: "Mitglied" },
+    update: { accessLevel: 0 },
+    create: { name: "Mitglied", description: "Einfaches Vereinsmitglied", accessLevel: 0 },
+  });
+
   const adminRole = await prisma.role.upsert({
     where: { name: "Admin" },
-    update: {},
-    create: { name: "Admin", description: "Systemadministrator" },
+    update: { accessLevel: 5 },
+    create: { name: "Admin", description: "Systemadministrator", accessLevel: 5 },
   });
 
   const passwordHash = await bcrypt.hash("admin123", 10);
@@ -50,7 +115,6 @@ async function seedAdminUser() {
       email: "admin@jl.local",
       passwordHash,
       roleId: adminRole.id,
-      accessLevel: 5,
     },
   });
 
@@ -64,6 +128,7 @@ async function main() {
 
   await seedAdminUser();
   await seedCategories();
+  await seedBusinessYears();
 
   console.log("\nSeed abgeschlossen.");
 }

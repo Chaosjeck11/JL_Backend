@@ -53,13 +53,15 @@ export class MembersService {
         phone: dto.phone,
         address: dto.address,
         roleId: dto.roleId,
-        accessLevel: dto.accessLevel ?? 0,
         u18: dto.u18 ?? false,
         bereitsMitglied: dto.bereitsMitglied ?? false,
         schuelerStudentAzubi: dto.schuelerStudentAzubi ?? false,
         berufstaetig: dto.berufstaetig ?? false,
+        excludeFromBeitrag: dto.excludeFromBeitrag ?? false,
       },
     });
+
+    if (member.excludeFromBeitrag) return this.findOne(member.id);
 
     const isReduced = member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
     const betragJL = 35;
@@ -93,12 +95,12 @@ export class MembersService {
     if (dto.address !== undefined) data.address = dto.address;
     if (dto.avatarPath !== undefined) data.avatarPath = dto.avatarPath;
     if (dto.roleId !== undefined) data.roleId = dto.roleId;
-    if (dto.accessLevel !== undefined) data.accessLevel = dto.accessLevel;
     if (dto.u18 !== undefined) data.u18 = dto.u18;
     if (dto.bereitsMitglied !== undefined) data.bereitsMitglied = dto.bereitsMitglied;
     if (dto.schuelerStudentAzubi !== undefined)
       data.schuelerStudentAzubi = dto.schuelerStudentAzubi;
     if (dto.berufstaetig !== undefined) data.berufstaetig = dto.berufstaetig;
+    if (dto.excludeFromBeitrag !== undefined) data.excludeFromBeitrag = dto.excludeFromBeitrag;
 
     if (dto.active !== undefined) {
       data.active = dto.active;
@@ -124,6 +126,13 @@ export class MembersService {
       data,
       include: MEMBER_INCLUDE,
     });
+
+    if (updated.excludeFromBeitrag) {
+      await this.prisma.mitgliedsbeitrag.deleteMany({
+        where: { memberId: id, bezahltJL: 0, bezahltKG: 0 },
+      });
+      return this.findOne(id);
+    }
 
     // Beiträge nach jedem Update neu berechnen
     const isReduced =

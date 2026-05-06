@@ -133,6 +133,7 @@ export class TransactionService {
     if (dto.memberId !== undefined) {
       data.member = dto.memberId ? { connect: { id: dto.memberId } } : { disconnect: true };
     }
+    if (dto.tag !== undefined) data.tag = dto.tag ?? null;
 
     return this.prisma.transaction.update({
       where: { id },

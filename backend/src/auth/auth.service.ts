@@ -32,7 +32,7 @@ export class AuthService {
     const payload = {
       sub: member.id,
       email: member.email,
-      accessLevel: member.accessLevel,
+      accessLevel: member.role.accessLevel,
       role: member.role.name,
     };
 

@@ -67,7 +67,7 @@ export class MitgliedsbeitragService {
   // Einmalige manuelle Generierung: Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre
   async generateAll() {
     const [members, businessYears] = await Promise.all([
-      this.prisma.member.findMany({ where: { active: true } }),
+      this.prisma.member.findMany({ where: { active: true, excludeFromBeitrag: false } }),
       this.prisma.businessYear.findMany(),
     ]);
 

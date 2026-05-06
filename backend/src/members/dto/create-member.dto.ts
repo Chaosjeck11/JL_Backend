@@ -10,10 +10,10 @@ export class CreateMemberDto {
   address?: string;
 
   roleId: number;
-  accessLevel?: number;
 
   u18?: boolean;
   bereitsMitglied?: boolean;
   schuelerStudentAzubi?: boolean;
   berufstaetig?: boolean;
+  excludeFromBeitrag?: boolean;
 }
