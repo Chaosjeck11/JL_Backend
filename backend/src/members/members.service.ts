@@ -139,7 +139,19 @@ export class MembersService {
           });
         }
       } else {
-        // Inaktiv: nur rückwirkend aktualisieren wenn explizit angegeben
+        // Inaktiv: Beiträge für Jahre löschen, die nach inactiveSince begonnen haben
+        const inactiveSince = updated.inactiveSince;
+        if (inactiveSince) {
+          const byStart = new Date(by.year, 1, 1); // 1. Feb des Jahres
+          if (byStart > inactiveSince) {
+            // Nur löschen wenn keine Zahlungen gebucht wurden
+            await this.prisma.mitgliedsbeitrag.deleteMany({
+              where: { memberId: id, businessYearId: by.id, bezahltJL: 0, bezahltKG: 0 },
+            });
+            continue;
+          }
+        }
+        // Betrag nur rückwirkend übernehmen wenn explizit angegeben
         if (applyBetrag) {
           await this.prisma.mitgliedsbeitrag.updateMany({
             where: { memberId: id, businessYearId: by.id },
