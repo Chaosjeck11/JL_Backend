@@ -4,19 +4,6 @@ import { CreateMemberDto } from "./dto/create-member.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
 import * as bcrypt from "bcrypt";
 
-const BEITRAG_JL = 35;
-const BEITRAG_KG = 65;
-
-function beitragsBetraege(member: {
-  u18: boolean;
-  schuelerStudentAzubi: boolean;
-  bereitsMitglied: boolean;
-}) {
-  const isReduced =
-    member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
-  return { betragJL: BEITRAG_JL, betragKG: isReduced ? 0 : BEITRAG_KG };
-}
-
 const MEMBER_INCLUDE = {
   role: true,
   mitgliedsbeitraege: {
@@ -73,29 +60,11 @@ export class MembersService {
       },
     });
 
-    // Create Mitgliedsbeitrag for every active BusinessYear (started on or before today)
-    const now = new Date();
-    const businessYears = await this.prisma.businessYear.findMany();
-    const { betragJL, betragKG } = beitragsBetraege(member);
-
-    for (const by of businessYears) {
-      const startDate = new Date(by.year, 1, 1); // Feb 1
-      if (startDate <= now) {
-        await this.prisma.mitgliedsbeitrag.upsert({
-          where: {
-            memberId_businessYearId: { memberId: member.id, businessYearId: by.id },
-          },
-          update: {},
-          create: { memberId: member.id, businessYearId: by.id, betragJL, betragKG },
-        });
-      }
-    }
-
     return this.findOne(member.id);
   }
 
   async update(id: number, dto: UpdateMemberDto) {
-    await this.findOne(id);
+    const currentMember = await this.findOne(id);
 
     const data: Record<string, unknown> = {};
 
@@ -134,11 +103,53 @@ export class MembersService {
       data.inactiveSince = dto.inactiveSince ? new Date(dto.inactiveSince) : null;
     }
 
-    return this.prisma.member.update({
+    const updated = await this.prisma.member.update({
       where: { id },
       data,
       include: MEMBER_INCLUDE,
     });
+
+    // Beiträge nach jedem Update neu berechnen
+    const isReduced =
+      updated.u18 || updated.schuelerStudentAzubi || updated.bereitsMitglied;
+    const betragJL = 35;
+    const betragKG = isReduced ? 0 : 65;
+    const retroactiveIds = new Set(dto.retroactiveYearIds ?? []);
+    const businessYears = await this.prisma.businessYear.findMany();
+
+    for (const by of businessYears) {
+      const applyBetrag = retroactiveIds.has(by.id);
+
+      if (updated.active) {
+        const existing = await this.prisma.mitgliedsbeitrag.findUnique({
+          where: { memberId_businessYearId: { memberId: id, businessYearId: by.id } },
+        });
+        if (existing) {
+          // Betrag nur rückwirkend übernehmen wenn Jahr explizit angegeben
+          if (applyBetrag) {
+            await this.prisma.mitgliedsbeitrag.update({
+              where: { id: existing.id },
+              data: { betragJL, betragKG },
+            });
+          }
+        } else {
+          // Fehlender Eintrag: immer mit aktuellem Betrag erstellen
+          await this.prisma.mitgliedsbeitrag.create({
+            data: { memberId: id, businessYearId: by.id, betragJL, betragKG },
+          });
+        }
+      } else {
+        // Inaktiv: nur rückwirkend aktualisieren wenn explizit angegeben
+        if (applyBetrag) {
+          await this.prisma.mitgliedsbeitrag.updateMany({
+            where: { memberId: id, businessYearId: by.id },
+            data: { betragJL, betragKG },
+          });
+        }
+      }
+    }
+
+    return this.findOne(id);
   }
 
   async deactivate(id: number) {

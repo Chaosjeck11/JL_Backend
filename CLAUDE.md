@@ -90,7 +90,7 @@ A fiscal year named by its start year. **2025 runs from 01.02.2025 to 31.01.2026
 
 `carryOver` stored in DB is used as the seed for the **oldest** year only. For all other years, `carryOver` is computed live by walking all prior years chronologically — so retroactive transaction changes are always reflected correctly.
 
-When a new `BusinessYear` is created, `Mitgliedsbeitrag` records are automatically generated for all eligible members.
+When a new `BusinessYear` is created, `Mitgliedsbeitrag` records are automatically generated for all currently active members.
 
 ### Category
 
@@ -126,10 +126,14 @@ Tracks the fee obligation and payment status for each Member × BusinessYear com
 
 Payments fill JL first, then KG. Status is computed automatically; can be manually corrected via `PATCH /finance/mitgliedsbeitraege/:id`.
 
-**Auto-creation triggers:**
-- New `BusinessYear` created → records for all members active at the year's start date
-- New `Member` created → records for all BusinessYears that have already started (startDate ≤ today)
-- Member who became inactive during a year still owes fees for that year
+**Auto-creation / update triggers:**
+- New `BusinessYear` created → Beiträge für alle aktuell aktiven Mitglieder (`active: true`)
+- `PATCH /members/:id` → Beiträge werden immer neu berechnet:
+  - Aktives Mitglied: fehlende Einträge werden erstellt; `betragJL`/`betragKG` auf bestehenden Einträgen werden **nur** aktualisiert, wenn die `businessYearId` im optionalen Body-Feld `retroactiveYearIds: number[]` angegeben ist
+  - Inaktives Mitglied: nur Einträge in `retroactiveYearIds` werden aktualisiert, keine neuen erstellt
+- Deaktivierung: keine Aktion — bereits erstellte Beiträge bleiben bestehen
+
+**Manueller Backfill:** `POST /finance/mitgliedsbeitraege/generate` (AccessLevel 5) — erstellt fehlende Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre (idempotent via upsert).
 
 ## API Routes
 
@@ -139,8 +143,8 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 |--------|-------|-------------|-------------|
 | GET | `/members` | 0 | All members incl. role, mitgliedsbeitraege |
 | GET | `/members/:id` | 0 | Single member incl. role, mitgliedsbeitraege, transactions |
-| POST | `/members` | 5 | Create; auto-creates Mitgliedsbeitrag records |
-| PATCH | `/members/:id` | 5 | Update any field except id/joinedAt/passwordHash |
+| POST | `/members` | 5 | Create member (no auto-Beitrag) |
+| PATCH | `/members/:id` | 5 | Update any field except id/joinedAt/passwordHash; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
 | PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() |
 
 ### Finance — Business Years
@@ -181,6 +185,7 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/finance/mitgliedsbeitraege` | 0 | All; optional `?businessYearId=&memberId=&status=` |
 | GET | `/finance/mitgliedsbeitraege/:id` | 0 | Single record incl. member, businessYear |
 | PATCH | `/finance/mitgliedsbeitraege/:id` | 5 | Manual correction of bezahltJL / bezahltKG; status auto-recomputed |
+| POST | `/finance/mitgliedsbeitraege/generate` | 5 | One-time backfill: upsert Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre |
 
 ## Key design decisions
 

@@ -64,6 +64,33 @@ export class MitgliedsbeitragService {
     });
   }
 
+  // Einmalige manuelle Generierung: Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre
+  async generateAll() {
+    const [members, businessYears] = await Promise.all([
+      this.prisma.member.findMany({ where: { active: true } }),
+      this.prisma.businessYear.findMany(),
+    ]);
+
+    let created = 0;
+    for (const member of members) {
+      const isReduced =
+        member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
+      const betragJL = 35;
+      const betragKG = isReduced ? 0 : 65;
+
+      for (const by of businessYears) {
+        const result = await this.prisma.mitgliedsbeitrag.upsert({
+          where: { memberId_businessYearId: { memberId: member.id, businessYearId: by.id } },
+          update: {},
+          create: { memberId: member.id, businessYearId: by.id, betragJL, betragKG },
+        });
+        if (result) created++;
+      }
+    }
+
+    return { message: `${created} Beitrag-Datensätze verarbeitet.` };
+  }
+
   // Called by TransactionService when an EINZAHLUNG on Mitgliedsbeitrag category is created
   async processPayment(memberId: number, businessYearId: number, amount: number) {
     const member = await this.prisma.member.findUnique({ where: { id: memberId } });

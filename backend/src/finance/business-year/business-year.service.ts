@@ -11,13 +11,6 @@ import { UpdateBusinessYearDto } from "./dto/update-business-year.dto";
 const BEITRAG_JL = 35;
 const BEITRAG_KG = 65;
 
-function byDates(year: number) {
-  return {
-    startDate: new Date(year, 1, 1),      // Feb 1 of named year
-    endDate: new Date(year + 1, 0, 31),   // Jan 31 of following year
-  };
-}
-
 function beitragsBetraege(member: {
   u18: boolean;
   schuelerStudentAzubi: boolean;
@@ -26,6 +19,13 @@ function beitragsBetraege(member: {
   const isReduced =
     member.u18 || member.schuelerStudentAzubi || member.bereitsMitglied;
   return { betragJL: BEITRAG_JL, betragKG: isReduced ? 0 : BEITRAG_KG };
+}
+
+function byDates(year: number) {
+  return {
+    startDate: new Date(year, 1, 1),      // Feb 1 of named year
+    endDate: new Date(year + 1, 0, 31),   // Jan 31 of following year
+  };
 }
 
 @Injectable()
@@ -103,17 +103,10 @@ export class BusinessYearService {
       data: { year: dto.year, carryOver },
     });
 
-    // Create Mitgliedsbeitrag for all members who were active at the start of this year
-    const { startDate } = byDates(dto.year);
+    // Beiträge nur für aktuell aktive Mitglieder erstellen
     const members = await this.prisma.member.findMany({
-      where: {
-        OR: [
-          { active: true },
-          { active: false, inactiveSince: { gte: startDate } },
-        ],
-      },
+      where: { active: true },
     });
-
     for (const member of members) {
       const { betragJL, betragKG } = beitragsBetraege(member);
       await this.prisma.mitgliedsbeitrag.create({

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Param,
   Body,
@@ -19,6 +20,12 @@ import { UpdateMitgliedsbeitragDto } from "./dto/update-mitgliedsbeitrag.dto";
 @UseGuards(AuthGuard("jwt"), AccessLevelGuard)
 export class MitgliedsbeitragController {
   constructor(private service: MitgliedsbeitragService) {}
+
+  @Post("generate")
+  @AccessLevel(5)
+  generateAll() {
+    return this.service.generateAll();
+  }
 
   @Get()
   @AccessLevel(0)
