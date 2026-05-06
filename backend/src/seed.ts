@@ -108,13 +108,14 @@ async function seedAdminUser() {
 
   await prisma.member.upsert({
     where: { email: "admin@jl.local" },
-    update: {},
+    update: { excludeFromBeitrag: true },
     create: {
       firstname: "System",
       lastname: "Admin",
       email: "admin@jl.local",
       passwordHash,
       roleId: adminRole.id,
+      excludeFromBeitrag: true,
     },
   });
 
