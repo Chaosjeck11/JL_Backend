@@ -152,6 +152,11 @@ export class MembersService {
           where: { memberId_businessYearId: { memberId: id, businessYearId: by.id } },
         });
         if (existing) {
+          const byEnd = new Date(by.year + 1, 0, 31);
+          if (byEnd < updated.joinedAt && existing.bezahltJL === 0 && existing.bezahltKG === 0) {
+            await this.prisma.mitgliedsbeitrag.delete({ where: { id: existing.id } });
+            continue;
+          }
           // Betrag nur rückwirkend übernehmen wenn Jahr explizit angegeben
           if (applyBetrag) {
             await this.prisma.mitgliedsbeitrag.update({
@@ -160,11 +165,10 @@ export class MembersService {
             });
           }
         } else {
+          const byEnd = new Date(by.year + 1, 0, 31); // 31. Jan des Folgejahres
+          if (byEnd < updated.joinedAt) continue;
           // Bei Reaktivierung: nur Jahre erstellen, die noch nicht vollständig abgelaufen sind
-          if (isReactivation) {
-            const byEnd = new Date(by.year + 1, 0, 31); // 31. Jan des Folgejahres
-            if (byEnd < today) continue;
-          }
+          if (isReactivation && byEnd < today) continue;
           await this.prisma.mitgliedsbeitrag.create({
             data: { memberId: id, businessYearId: by.id, betragJL, betragKG },
           });

@@ -147,7 +147,8 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 **Auto-creation / update triggers:**
 - New `BusinessYear` created → Beiträge für alle aktuell aktiven Mitglieder (`active: true`)
 - `PATCH /members/:id` → Beiträge werden immer neu berechnet:
-  - Aktives Mitglied: fehlende Einträge werden erstellt; `betragJL`/`betragKG` auf bestehenden Einträgen werden **nur** aktualisiert, wenn die `businessYearId` im optionalen Body-Feld `retroactiveYearIds: number[]` angegeben ist
+  - Aktives Mitglied: fehlende Einträge werden erstellt, sofern `byEnd >= joinedAt` (Geschäftsjahr endet 31.01. des Folgejahres); `betragJL`/`betragKG` auf bestehenden Einträgen werden **nur** aktualisiert, wenn die `businessYearId` im optionalen Body-Feld `retroactiveYearIds: number[]` angegeben ist
+  - Bestehende Einträge für Geschäftsjahre, deren Ende **vor** `joinedAt` liegt, werden automatisch gelöscht — aber **nur wenn** `bezahltJL === 0` und `bezahltKG === 0`
   - Inaktives Mitglied: nur Einträge in `retroactiveYearIds` werden aktualisiert, keine neuen erstellt
 - Deaktivierung: keine Aktion — bereits erstellte Beiträge bleiben bestehen
 
