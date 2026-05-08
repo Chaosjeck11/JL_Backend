@@ -86,6 +86,7 @@ export class MembersService {
 
     const data: Record<string, unknown> = {};
 
+    if (dto.password !== undefined) data.passwordHash = await bcrypt.hash(dto.password, 10);
     if (dto.firstname !== undefined) data.firstname = dto.firstname;
     if (dto.lastname !== undefined) data.lastname = dto.lastname;
     if (dto.email !== undefined) data.email = dto.email;

@@ -85,19 +85,20 @@ Belongs to a `Role` (many-to-one). Members are soft-deactivated via `active: fal
 | `id` | Int | PK |
 | `firstname`, `lastname` | String | |
 | `email` | String | unique |
-| `passwordHash` | String | bcrypt |
+| `passwordHash` | String | bcrypt; update via `password` field in PATCH |
 | `birthday` | DateTime? | |
 | `phone`, `address`, `avatarPath` | String? | |
 | `roleId` | Int | FK → Role |
 | `active` | Boolean | default true |
 | `inactiveSince` | DateTime? | set automatically on deactivate |
-| `joinedAt` | DateTime | default now(); settable on create |
+| `joinedAt` | DateTime | default now(); settable on create and updatable via PATCH |
 | `u18` | Boolean | default false |
 | `bereitsMitglied` | Boolean | default false — already member of parent org |
 | `schuelerStudentAzubi` | Boolean | default false |
 | `berufstaetig` | Boolean | default false |
+| `excludeFromBeitrag` | Boolean | default false — skips Mitgliedsbeitrag generation entirely |
 
-All fields except `id`, `joinedAt`, and `passwordHash` are editable via `PATCH /members/:id`. `joinedAt` can be set on creation but not updated afterwards. `accessLevel` is **not** a Member field — it derives from the assigned Role.
+All fields except `id` are editable via `PATCH /members/:id`. Send `password` (plaintext) to update the password — it is hashed server-side before storage. `joinedAt` can be set on creation and updated afterwards. `accessLevel` is **not** a Member field — it derives from the assigned Role.
 
 ### BusinessYear
 
@@ -163,7 +164,7 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/members` | 0 | All members incl. role, mitgliedsbeitraege |
 | GET | `/members/:id` | 0 | Single member incl. role, mitgliedsbeitraege, transactions |
 | POST | `/members` | 5 | Create member; required `roleId`; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
-| PATCH | `/members/:id` | 5 | Update any field except id/joinedAt/passwordHash/accessLevel; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
+| PATCH | `/members/:id` | 5 | Update any field except id/accessLevel; send `password` to update password (hashed server-side); optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
 | PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() |
 
 ### Finance — Business Years

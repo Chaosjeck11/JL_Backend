@@ -1,5 +1,6 @@
 export class UpdateMemberDto {
   firstname?: string;
+  password?: string;
   lastname?: string;
   email?: string;
   birthday?: string | null;
