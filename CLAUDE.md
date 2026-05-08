@@ -51,7 +51,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 
 - `PrismaModule` — global singleton wrapping `PrismaClient`, imported by every feature module that needs DB access.
 - `AuthModule` — handles `POST /auth/login`, returns a JWT. The JWT payload carries `sub` (memberId), `email`, `accessLevel`, and `role`.
-- `MembersModule` — CRUD for `Member` records.
+- `MembersModule` — CRUD for `Member` records; Multer-Upload für Avatar-Bilder auf lokalem Filesystem (`uploads/avatars/`).
 - `FinanceModule` — Kassenbuch-Verwaltung, aufgeteilt in fünf Sub-Ressourcen:
   - `BusinessYear` — Geschäftsjahre mit aggregierten Kennzahlen und Datumsgrenzen
   - `Category` — Buchungskategorien
@@ -95,7 +95,8 @@ Belongs to a `Role` (many-to-one). Members are soft-deactivated via `active: fal
 | `email` | String | unique |
 | `passwordHash` | String | bcrypt; update via `password` field in PATCH |
 | `birthday` | DateTime? | |
-| `phone`, `address`, `avatarPath` | String? | |
+| `phone`, `address` | String? | |
+| `avatarPath` | String? | UUID-based filename stored in `uploads/avatars/`; managed via avatar endpoints |
 | `roleId` | Int | FK → Role |
 | `active` | Boolean | default true |
 | `inactiveSince` | DateTime? | set automatically on deactivate |
@@ -151,6 +152,8 @@ File attachments (receipts, invoices, emails) linked to a `Transaction`.
 
 Files stored at `uploads/attachments/` relative to `process.cwd()` (i.e. `/app/uploads/attachments/` in container). Mount `/app/uploads` as a Docker volume to persist files across container rebuilds. Requires `@types/multer` devDependency.
 
+Avatar files stored at `uploads/avatars/` — same volume covers both. Old avatar deleted automatically on re-upload.
+
 ### Mitgliedsbeitrag
 
 Tracks the fee obligation and payment status for each Member × BusinessYear combination.
@@ -192,6 +195,9 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | POST | `/members` | 5 | Create member; required `roleId`; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
 | PATCH | `/members/:id` | 5 | Update any field except id/accessLevel; send `password` to update password (hashed server-side); optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
 | PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() |
+| POST | `/members/:id/avatar` | 5 | Upload avatar (multipart/form-data, field `file`; images only, max 5 MB); replaces old file |
+| GET | `/members/:id/avatar` | 0 | Serve avatar image inline |
+| DELETE | `/members/:id/avatar` | 5 | Delete avatar file + clear avatarPath |
 
 ### Finance — Business Years
 

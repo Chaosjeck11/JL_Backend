@@ -1,8 +1,12 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import * as fs from "fs";
+import * as path from "path";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateMemberDto } from "./dto/create-member.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
 import * as bcrypt from "bcrypt";
+
+const AVATAR_DIR = path.join(process.cwd(), "uploads", "avatars");
 
 const MEMBER_INCLUDE = {
   role: true,
@@ -199,6 +203,56 @@ export class MembersService {
     }
 
     return this.findOne(id);
+  }
+
+  async uploadAvatar(id: number, file: Express.Multer.File) {
+    const member = await this.prisma.member.findUnique({ where: { id } });
+    if (!member) throw new NotFoundException("Member not found");
+
+    if (member.avatarPath) {
+      const old = path.join(AVATAR_DIR, path.basename(member.avatarPath));
+      if (fs.existsSync(old)) fs.unlinkSync(old);
+    }
+
+    return this.prisma.member.update({
+      where: { id },
+      data: { avatarPath: file.filename },
+      include: { role: true },
+    });
+  }
+
+  async getAvatar(id: number): Promise<{ filePath: string; mimeType: string }> {
+    const member = await this.prisma.member.findUnique({ where: { id } });
+    if (!member || !member.avatarPath) throw new NotFoundException("No avatar");
+
+    const filePath = path.join(AVATAR_DIR, path.basename(member.avatarPath));
+    if (!fs.existsSync(filePath)) throw new NotFoundException("Avatar file missing");
+
+    const ext = path.extname(member.avatarPath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+    };
+    return { filePath, mimeType: mimeMap[ext] ?? "application/octet-stream" };
+  }
+
+  async removeAvatar(id: number) {
+    const member = await this.prisma.member.findUnique({ where: { id } });
+    if (!member) throw new NotFoundException("Member not found");
+
+    if (member.avatarPath) {
+      const filePath = path.join(AVATAR_DIR, path.basename(member.avatarPath));
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+
+    return this.prisma.member.update({
+      where: { id },
+      data: { avatarPath: null },
+      include: { role: true },
+    });
   }
 
   findAllRoles() {
