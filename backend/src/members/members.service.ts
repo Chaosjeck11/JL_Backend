@@ -101,6 +101,7 @@ export class MembersService {
       data.schuelerStudentAzubi = dto.schuelerStudentAzubi;
     if (dto.berufstaetig !== undefined) data.berufstaetig = dto.berufstaetig;
     if (dto.excludeFromBeitrag !== undefined) data.excludeFromBeitrag = dto.excludeFromBeitrag;
+    if (dto.joinedAt !== undefined) data.joinedAt = new Date(dto.joinedAt);
 
     if (dto.active !== undefined) {
       data.active = dto.active;

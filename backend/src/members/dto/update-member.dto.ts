@@ -14,6 +14,7 @@ export class UpdateMemberDto {
   schuelerStudentAzubi?: boolean;
   berufstaetig?: boolean;
   excludeFromBeitrag?: boolean;
+  joinedAt?: string;
   /** Jahr-IDs, für die eine Beitragsänderung rückwirkend übernommen werden soll */
   retroactiveYearIds?: number[];
 }
