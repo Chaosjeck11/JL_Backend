@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+
+## Maintenance
+After significant changes to the codebase, update this CLAUDE.md 
+to reflect new architecture, added services, or changed conventions.
+
+
+
 ## Commands
 
 All commands run from `backend/`:
@@ -45,11 +52,12 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 - `PrismaModule` — global singleton wrapping `PrismaClient`, imported by every feature module that needs DB access.
 - `AuthModule` — handles `POST /auth/login`, returns a JWT. The JWT payload carries `sub` (memberId), `email`, `accessLevel`, and `role`.
 - `MembersModule` — CRUD for `Member` records.
-- `FinanceModule` — Kassenbuch-Verwaltung, aufgeteilt in vier Sub-Ressourcen:
+- `FinanceModule` — Kassenbuch-Verwaltung, aufgeteilt in fünf Sub-Ressourcen:
   - `BusinessYear` — Geschäftsjahre mit aggregierten Kennzahlen und Datumsgrenzen
   - `Category` — Buchungskategorien
   - `Transaction` — Einzelbuchungen mit Rückbuchungslogik
   - `Mitgliedsbeitrag` — Beitragsverwaltung je Member × Geschäftsjahr
+  - `Attachment` — Dateianhänge (Belege, Rechnungen, PDFs) an Transaktionen; Multer-Upload auf lokalem Filesystem
 
 **Authorization flow:**
 
@@ -124,6 +132,24 @@ Belongs to `BusinessYear`, `Category`, and optionally `Member`. The `type` enum:
 `tag` (optional, `PaymentTag` enum): payment method tag — `ONLINE` or `BAR`. Settable on create and updatable via PATCH.
 
 `memberId` (optional): when set on an `EINZAHLUNG` with `isMitgliedsbeitrag` category, the `Mitgliedsbeitrag` record for that member × year is updated automatically. On deletion, the record is recomputed from remaining transactions.
+
+Has a `attachments` relation to `TransactionAttachment` (`onDelete: Cascade`).
+
+### TransactionAttachment
+
+File attachments (receipts, invoices, emails) linked to a `Transaction`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `transactionId` | Int | FK → Transaction (cascade delete) |
+| `filename` | String | original filename as uploaded |
+| `storedName` | String | unique UUID-based filename on disk |
+| `mimeType` | String | |
+| `size` | Int | bytes |
+| `uploadedAt` | DateTime | default now() |
+
+Files stored at `uploads/attachments/` relative to `process.cwd()` (i.e. `/app/uploads/attachments/` in container). Mount `/app/uploads` as a Docker volume to persist files across container rebuilds. Requires `@types/multer` devDependency.
 
 ### Mitgliedsbeitrag
 
@@ -206,6 +232,15 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/finance/mitgliedsbeitraege/:id` | 0 | Single record incl. member, businessYear |
 | PATCH | `/finance/mitgliedsbeitraege/:id` | 5 | Manual correction of bezahltJL / bezahltKG; status auto-recomputed |
 | POST | `/finance/mitgliedsbeitraege/generate` | 5 | One-time backfill: upsert Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre |
+
+### Finance — Transaction Attachments
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/finance/transactions/:id/attachments` | 0 | List attachments for transaction |
+| POST | `/finance/transactions/:id/attachments` | 5 | Upload file (multipart/form-data, field name `file`) |
+| GET | `/finance/transactions/:id/attachments/:aid/download` | 0 | Download file with original filename |
+| DELETE | `/finance/transactions/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
 
 ## Key design decisions
 

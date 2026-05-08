@@ -1,4 +1,9 @@
+import * as fs from "fs";
+import * as path from "path";
+import { randomUUID } from "crypto";
 import { Module } from "@nestjs/common";
+import { MulterModule } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
 import { PrismaModule } from "../prisma/prisma.module";
 import { BusinessYearController } from "./business-year/business-year.controller";
 import { BusinessYearService } from "./business-year/business-year.service";
@@ -8,20 +13,38 @@ import { TransactionController } from "./transaction/transaction.controller";
 import { TransactionService } from "./transaction/transaction.service";
 import { MitgliedsbeitragController } from "./mitgliedsbeitrag/mitgliedsbeitrag.controller";
 import { MitgliedsbeitragService } from "./mitgliedsbeitrag/mitgliedsbeitrag.service";
+import { AttachmentController } from "./attachment/attachment.controller";
+import { AttachmentService } from "./attachment/attachment.service";
+
+const UPLOAD_DIR = path.join(process.cwd(), "uploads", "attachments");
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    MulterModule.register({
+      storage: diskStorage({
+        destination: UPLOAD_DIR,
+        filename: (_req, file, cb) => {
+          const ext = path.extname(file.originalname);
+          cb(null, `${randomUUID()}${ext}`);
+        },
+      }),
+    }),
+  ],
   controllers: [
     BusinessYearController,
     CategoryController,
     TransactionController,
     MitgliedsbeitragController,
+    AttachmentController,
   ],
   providers: [
     BusinessYearService,
     CategoryService,
     TransactionService,
     MitgliedsbeitragService,
+    AttachmentService,
   ],
 })
 export class FinanceModule {}
