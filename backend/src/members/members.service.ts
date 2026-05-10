@@ -184,7 +184,7 @@ export class MembersService {
         const inactiveSince = updated.inactiveSince;
         if (inactiveSince) {
           const byStart = new Date(by.year, 1, 1); // 1. Feb des Jahres
-          if (byStart > inactiveSince) {
+          if (byStart.getTime() > inactiveSince.getTime()) {
             // Nur löschen wenn keine Zahlungen gebucht wurden
             await this.prisma.mitgliedsbeitrag.deleteMany({
               where: { memberId: id, businessYearId: by.id, bezahltJL: 0, bezahltKG: 0 },
