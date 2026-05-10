@@ -38,6 +38,35 @@ model Member {
   role               Role               @relation(fields: [roleId], references: [id])
   transactions       Transaction[]
   mitgliedsbeitraege Mitgliedsbeitrag[]
+  files              File[]
+  attachments        MemberAttachment[]
+}
+
+model MemberAttachment {
+  id         Int      @id @default(autoincrement())
+  memberId   Int
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  filename   String
+  storedName String   @unique
+  mimeType   String
+  size       Int
+  uploadedAt DateTime @default(now())
+}
+
+// ── File manager ──────────────────────────────────────────────────────────────
+
+model File {
+  id          Int      @id @default(autoincrement())
+  filename    String
+  storedName  String   @unique
+  mimeType    String
+  size        Int
+  path        String
+  uploadedAt  DateTime @default(now())
+  uploadedBy  Int
+  description String?
+
+  uploader Member @relation(fields: [uploadedBy], references: [id])
 }
 
 // ── Finance module ────────────────────────────────────────────────────────────

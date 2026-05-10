@@ -6,6 +6,8 @@ import { MulterModule } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { MembersController } from "./members.controller";
 import { MembersService } from "./members.service";
+import { MemberAttachmentController } from "./attachment/member-attachment.controller";
+import { MemberAttachmentService } from "./attachment/member-attachment.service";
 import { PrismaModule } from "../prisma/prisma.module";
 
 const AVATAR_DIR = path.join(process.cwd(), "uploads", "avatars");
@@ -32,7 +34,7 @@ fs.mkdirSync(AVATAR_DIR, { recursive: true });
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   ],
-  controllers: [MembersController],
-  providers: [MembersService],
+  controllers: [MembersController, MemberAttachmentController],
+  providers: [MembersService, MemberAttachmentService],
 })
 export class MembersModule {}

@@ -51,13 +51,14 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 
 - `PrismaModule` — global singleton wrapping `PrismaClient`, imported by every feature module that needs DB access.
 - `AuthModule` — handles `POST /auth/login`, returns a JWT. The JWT payload carries `sub` (memberId), `email`, `accessLevel`, and `role`.
-- `MembersModule` — CRUD for `Member` records; Multer-Upload für Avatar-Bilder auf lokalem Filesystem (`uploads/avatars/`).
+- `MembersModule` — CRUD for `Member` records; Multer-Upload für Avatar-Bilder (`uploads/avatars/`) und Member-Anhänge (`uploads/member-attachments/`, alle Dateitypen, max 50 MB).
 - `FinanceModule` — Kassenbuch-Verwaltung, aufgeteilt in fünf Sub-Ressourcen:
   - `BusinessYear` — Geschäftsjahre mit aggregierten Kennzahlen und Datumsgrenzen
   - `Category` — Buchungskategorien
   - `Transaction` — Einzelbuchungen mit Rückbuchungslogik
   - `Mitgliedsbeitrag` — Beitragsverwaltung je Member × Geschäftsjahr
   - `Attachment` — Dateianhänge (Belege, Rechnungen, PDFs) an Transaktionen; Multer-Upload auf lokalem Filesystem
+- `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all reads; AccessLevel(5) for upload, update, delete.
 
 **Authorization flow:**
 
@@ -109,6 +110,22 @@ Belongs to a `Role` (many-to-one). Members are soft-deactivated via `active: fal
 
 All fields except `id` are editable via `PATCH /members/:id`. Send `password` (plaintext) to update the password — it is hashed server-side before storage. `joinedAt` can be set on creation and updated afterwards. `accessLevel` is **not** a Member field — it derives from the assigned Role.
 
+### MemberAttachment
+
+File attachments linked to a `Member` (onDelete: Cascade).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `memberId` | Int | FK → Member (cascade delete) |
+| `filename` | String | original filename as uploaded |
+| `storedName` | String | unique UUID-based filename on disk |
+| `mimeType` | String | |
+| `size` | Int | bytes |
+| `uploadedAt` | DateTime | default now() |
+
+Files stored at `uploads/member-attachments/` relative to `process.cwd()`. Covered by the same `/app/uploads` Docker volume as avatars and transaction attachments.
+
 ### BusinessYear
 
 A fiscal year named by its start year. **2025 runs from 01.02.2025 to 31.01.2026.**
@@ -150,9 +167,13 @@ File attachments (receipts, invoices, emails) linked to a `Transaction`.
 | `size` | Int | bytes |
 | `uploadedAt` | DateTime | default now() |
 
-Files stored at `uploads/attachments/` relative to `process.cwd()` (i.e. `/app/uploads/attachments/` in container). Mount `/app/uploads` as a Docker volume to persist files across container rebuilds. Requires `@types/multer` devDependency.
+Files stored at `uploads/attachments/` relative to `process.cwd()`. Mount `/app/uploads` as a Docker volume to persist files across container rebuilds. Requires `@types/multer` devDependency.
 
-Avatar files stored at `uploads/avatars/` — same volume covers both. Old avatar deleted automatically on re-upload.
+All upload directories are under `/app/uploads/` and covered by the same Docker volume:
+- `uploads/avatars/` — Member avatars (images only, max 5 MB); old file deleted on re-upload
+- `uploads/attachments/` — Transaction attachments (all mimetypes, no size limit configured)
+- `uploads/member-attachments/` — Member attachments (all mimetypes, max 50 MB)
+- `uploads/files/` — General FilesModule uploads (all mimetypes, max 50 MB)
 
 ### Mitgliedsbeitrag
 
@@ -177,10 +198,11 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 **Auto-creation / update triggers:**
 - New `BusinessYear` created → Beiträge für alle aktuell aktiven Mitglieder (`active: true`)
 - `PATCH /members/:id` → Beiträge werden immer neu berechnet:
-  - Aktives Mitglied: fehlende Einträge werden erstellt, sofern `byEnd >= joinedAt` (Geschäftsjahr endet 31.01. des Folgejahres); `betragJL`/`betragKG` auf bestehenden Einträgen werden **nur** aktualisiert, wenn die `businessYearId` im optionalen Body-Feld `retroactiveYearIds: number[]` angegeben ist
+  - Aktives Mitglied: fehlende Einträge werden erstellt, sofern `byEnd >= joinedAt` (Geschäftsjahr endet 31.01. des Folgejahres); bei Reaktivierung (`active: false→true`) nur Geschäftsjahre, die noch nicht vollständig abgelaufen sind; `betragJL`/`betragKG` auf bestehenden Einträgen werden **nur** aktualisiert, wenn die `businessYearId` im optionalen Body-Feld `retroactiveYearIds: number[]` angegeben ist
   - Bestehende Einträge für Geschäftsjahre, deren Ende **vor** `joinedAt` liegt, werden automatisch gelöscht — aber **nur wenn** `bezahltJL === 0` und `bezahltKG === 0`
-  - Inaktives Mitglied: nur Einträge in `retroactiveYearIds` werden aktualisiert, keine neuen erstellt
-- Deaktivierung: keine Aktion — bereits erstellte Beiträge bleiben bestehen
+  - Inaktives Mitglied: Beiträge für Geschäftsjahre, die **nach** `inactiveSince` beginnen (01.02.), werden gelöscht (nur wenn unbezahlt); nur Einträge in `retroactiveYearIds` werden in Bezug auf Beträge aktualisiert, keine neuen erstellt
+  - `excludeFromBeitrag = true`: alle unbezahlten Beiträge werden gelöscht
+- `PATCH /members/:id/deactivate`: setzt nur `active=false, inactiveSince=now()` — **keine** Beitrag-Bereinigung (dafür PATCH verwenden)
 
 **Manueller Backfill:** `POST /finance/mitgliedsbeitraege/generate` (AccessLevel 5) — erstellt fehlende Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre (idempotent via upsert).
 
@@ -191,13 +213,23 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
 | GET | `/members` | 0 | All members incl. role, mitgliedsbeitraege |
+| GET | `/members/roles` | 0 | All roles ordered by accessLevel |
 | GET | `/members/:id` | 0 | Single member incl. role, mitgliedsbeitraege, transactions |
 | POST | `/members` | 5 | Create member; required `roleId`; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
-| PATCH | `/members/:id` | 5 | Update any field except id/accessLevel; send `password` to update password (hashed server-side); optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
-| PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() |
+| PATCH | `/members/:id` | 5 | Update any field except id/accessLevel; send `password` to update password (hashed server-side); `active`/`inactiveSince` directly settable; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
+| PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() (bypasses Beitrag cleanup — use PATCH for that) |
 | POST | `/members/:id/avatar` | 5 | Upload avatar (multipart/form-data, field `file`; images only, max 5 MB); replaces old file |
 | GET | `/members/:id/avatar` | 0 | Serve avatar image inline |
 | DELETE | `/members/:id/avatar` | 5 | Delete avatar file + clear avatarPath |
+
+### Members — Attachments
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/members/:id/attachments` | 0 | List attachments for member |
+| POST | `/members/:id/attachments` | 5 | Upload file (multipart/form-data, field `file`); all mimetypes, max 50 MB |
+| GET | `/members/:id/attachments/:aid/download` | 0 | Download file with original filename |
+| DELETE | `/members/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
 
 ### Finance — Business Years
 
@@ -247,6 +279,18 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | POST | `/finance/transactions/:id/attachments` | 5 | Upload file (multipart/form-data, field name `file`) |
 | GET | `/finance/transactions/:id/attachments/:aid/download` | 0 | Download file with original filename |
 | DELETE | `/finance/transactions/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
+
+### Files
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/files` | 0 | All files; optional `?path=` to filter by folder |
+| GET | `/files/folders` | 0 | List distinct folder paths |
+| POST | `/files/upload` | 5 | Upload file (multipart/form-data, field `file`); body fields: `path?` (folder), `description?` |
+| GET | `/files/:id/download` | 0 | Download with `Content-Disposition: attachment` |
+| GET | `/files/:id/preview` | 0 | Inline view with `Content-Disposition: inline` (PDF/image) |
+| PATCH | `/files/:id` | 5 | Update `description` and/or `path` |
+| DELETE | `/files/:id` | 5 | Delete DB record + file from disk |
 
 ## Key design decisions
 
