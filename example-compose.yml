@@ -18,6 +18,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
+    volumes:
+      - /mnt/lokal_nas/storage/services/Junge_loewen:/app/uploads
     depends_on:
       - db
     networks:
