@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import * as fs from "fs";
 import * as path from "path";
-import { TransactionType } from "@prisma/client";
+import { Prisma, TransactionType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateVeranstaltungDto } from "./dto/create-veranstaltung.dto";
 import { UpdateVeranstaltungDto } from "./dto/update-veranstaltung.dto";
@@ -60,7 +60,7 @@ export class VeranstaltungenService {
         description: dto.description,
         form: {
           create: {
-            columns: (template.columns as unknown[]) ?? [],
+            columns: (template.columns as Prisma.InputJsonValue) ?? [],
           },
         },
       },
