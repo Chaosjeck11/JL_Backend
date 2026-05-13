@@ -59,7 +59,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
   - `Mitgliedsbeitrag` — Beitragsverwaltung je Member × Geschäftsjahr
   - `Attachment` — Dateianhänge (Belege, Rechnungen, PDFs) an Transaktionen; Multer-Upload auf lokalem Filesystem
 - `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all reads; AccessLevel(5) for upload, update, delete.
-- `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Two controllers in one module: `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments) and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
+- `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Three controllers in one module: `VeranstaltungenICalController` (public iCal feed, no guards), `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments), and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
 
 **Authorization flow:**
 
@@ -366,6 +366,7 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | POST | `/veranstaltungen/:id/form/rows` | 5 | Add row; body: `cells?: { [colId]: value }`, `rowIndex?` (auto-appended if omitted) |
 | PATCH | `/veranstaltungen/:id/form/rows/:rowId` | 5 | Update `cells` and/or `rowIndex` |
 | DELETE | `/veranstaltungen/:id/form/rows/:rowId` | 5 | Delete row |
+| GET | `/veranstaltungen/ical` | **public** | iCal-Feed aller Veranstaltungen (kein JWT erforderlich) |
 
 ### Veranstaltung Form Template
 
@@ -385,6 +386,84 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/files/:id/preview` | 0 | Inline view with `Content-Disposition: inline` (PDF/image) |
 | PATCH | `/files/:id` | 5 | Update `description` and/or `path` |
 | DELETE | `/files/:id` | 5 | Delete DB record + file from disk |
+
+## iCal-Feed (`GET /veranstaltungen/ical`)
+
+Öffentlicher Kalender-Feed aller Veranstaltungen im iCalendar-Format (RFC 5545). Kein JWT-Token erforderlich — direkt abonnierbar in Google Calendar, Samsung Calendar, Apple Calendar etc.
+
+### Technische Umsetzung
+
+**Paket:** `ical-generator` (npm). Installiert als Produktionsabhängigkeit in `backend/package.json`.
+
+**Controller:** `VeranstaltungenICalController` in `src/veranstaltungen/veranstaltungen.controller.ts`.
+- Separater Controller-Class ohne `@UseGuards()`-Decorator — vollständig öffentlich.
+- Registriert **vor** `VeranstaltungenController` in `veranstaltungen.module.ts`, damit NestJS `/ical` vor dem dynamischen `/:id`-Segment aufzulöst.
+- Delegiert den DB-Zugriff an `VeranstaltungenService.findAll()`.
+
+**Antwort:**
+- `Content-Type: text/calendar; charset=utf-8`
+- `Content-Disposition: inline; filename="junge-loewen.ics"`
+- `Access-Control-Allow-Origin: *` (via `@Header()`-Decorator — nur auf diesem Handler, globale CORS-Allowlist bleibt unverändert)
+
+**Kalender-Metadaten:**
+- `name`: `Junge Löwen Events`
+- `timezone`: `Europe/Berlin`
+- `prodId`: `//Junge Löwen//Events//DE`
+
+**VEVENT-Mapping** (jede Veranstaltung wird ein Eintrag):
+
+| iCal-Feld | Quelle |
+|-----------|--------|
+| `UID` | `veranstaltung-{id}@junge-loewen` |
+| `SUMMARY` | `v.name` |
+| `DESCRIPTION` | `v.description ?? ""` |
+| `DTSTART;VALUE=DATE` | `v.date` (ganztägig, `allDay: true`) |
+| `DTEND;VALUE=DATE` | identisch mit `DTSTART` (eintägiges Event) |
+
+### CORS-Strategie
+
+Kalender-Clients (Google Calendar, Samsung Calendar, Apple Calendar) fetchen den Feed **serverseitig** — CORS greift dort nicht. Für browserbasierte Subscriptions (z. B. eingebetteter Kalender auf einer Website) setzt der Handler explizit `Access-Control-Allow-Origin: *` per `@Header()`-Decorator. Die globale CORS-Konfiguration in `main.ts` (Allowlist mit Frontend-Ursprüngen + `credentials: true`) bleibt unberührt.
+
+### Bekannte Probleme & Lösungen
+
+#### Node.js-Versionswarnung bei ical-generator v10
+
+`ical-generator@10.x` setzt Node 20, 22 oder ≥ 24 voraus. Der Container läuft auf Node 18 und erzeugt beim `npm install` folgende Warnung:
+
+```
+npm WARN EBADENGINE Unsupported engine {
+  package: 'ical-generator@10.2.0',
+  required: { node: '20 || 22 || >=24' },
+  current: { node: 'v18.19.1', npm: '9.2.0' }
+}
+```
+
+**Auswirkung:** Die Warnung verhindert weder den Build noch den Betrieb — `ical-generator@10` läuft faktisch auch auf Node 18. Solange kein Laufzeitfehler auftritt, ist keine Aktion nötig.
+
+**Lösung bei Laufzeitproblemen:** Auf `ical-generator@8` downgraden (letzte Version mit Node-18-Support):
+
+```bash
+npm install ical-generator@8
+```
+
+Der API-Aufruf in `veranstaltungen.controller.ts` ist zwischen v8 und v10 kompatibel (gleiche Methoden `ical()`, `createEvent()`, `allDay`, `toString()`). Kein Code-Umbau nötig.
+
+#### Möglicher ESM/CJS-Konflikt
+
+`ical-generator@10` liefert sowohl ein ESM- als auch ein CJS-Bundle (`dist/index.mjs` / `dist/index.cjs`). NestJS verwendet CommonJS (`ts-node` + `nest build`). Der Import
+
+```typescript
+import ical from "ical-generator";
+```
+
+wird über `tsconfig.json` → `"esModuleInterop": true` korrekt aufgelöst. Sollte der Import mit einem `__esModule`-Fehler scheitern, alternativ:
+
+```typescript
+import * as ical from "ical-generator";
+const cal = (ical as any).default({ ... });
+```
+
+oder Downgrade auf v8 (rein CJS).
 
 ## Key design decisions
 

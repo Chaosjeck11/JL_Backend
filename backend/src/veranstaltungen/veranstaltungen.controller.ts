@@ -12,6 +12,7 @@ import {
   UploadedFile,
   HttpCode,
   HttpStatus,
+  Header,
   Res,
   BadRequestException,
 } from "@nestjs/common";
@@ -21,6 +22,7 @@ import { diskStorage } from "multer";
 import { Response } from "express";
 import * as path from "path";
 import { randomUUID } from "crypto";
+import ical from "ical-generator";
 import { VeranstaltungenService, VERANSTALTUNG_ATTACHMENT_DIR } from "./veranstaltungen.service";
 import { CreateVeranstaltungDto } from "./dto/create-veranstaltung.dto";
 import { UpdateVeranstaltungDto } from "./dto/update-veranstaltung.dto";
@@ -29,6 +31,39 @@ import { UpdateFormRowDto } from "./dto/update-form-row.dto";
 import { UpdateFormTemplateDto } from "./dto/update-form-template.dto";
 import { AccessLevel } from "../auth/access-level.decorator";
 import { AccessLevelGuard } from "../auth/access-level.guard";
+
+@Controller("veranstaltungen")
+export class VeranstaltungenICalController {
+  constructor(private service: VeranstaltungenService) {}
+
+  @Get("ical")
+  @Header("Access-Control-Allow-Origin", "*")
+  async getICal(@Res() res: Response) {
+    const events = await this.service.findAll();
+
+    const cal = ical({
+      name: "Junge Löwen Events",
+      timezone: "Europe/Berlin",
+      prodId: "//Junge Löwen//Events//DE",
+    });
+
+    for (const v of events) {
+      const day = new Date(v.date);
+      cal.createEvent({
+        id: `veranstaltung-${v.id}@junge-loewen`,
+        summary: v.name,
+        description: v.description ?? "",
+        start: day,
+        end: day,
+        allDay: true,
+      });
+    }
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", 'inline; filename="junge-loewen.ics"');
+    res.send(cal.toString());
+  }
+}
 
 const multerOptions = {
   storage: diskStorage({
