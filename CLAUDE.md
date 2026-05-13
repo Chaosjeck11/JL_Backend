@@ -60,6 +60,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
   - `Attachment` — Dateianhänge (Belege, Rechnungen, PDFs) an Transaktionen; Multer-Upload auf lokalem Filesystem
 - `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all reads; AccessLevel(5) for upload, update, delete.
 - `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Three controllers in one module: `VeranstaltungenICalController` (public iCal feed, no guards), `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments), and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
+- `VeranstaltungKategorienModule` — CRUD for `VeranstaltungKategorie` records at route `/veranstaltung-kategorien`. Many-to-many relation to `Veranstaltung`. Fields: `name` (unique), `description?`, `color?`. Delete blocked if category is used by any event.
 
 **Authorization flow:**
 
@@ -191,7 +192,34 @@ Event record. Each Veranstaltung gets a `VeranstaltungForm` created automaticall
 | `description` | String? | |
 | `createdAt`, `updatedAt` | DateTime | |
 
-Relations: `transactions Transaction[]`, `attachments VeranstaltungAttachment[]`, `form VeranstaltungForm?`
+Relations: `transactions Transaction[]`, `attachments VeranstaltungAttachment[]`, `form VeranstaltungForm?`, `kategorien VeranstaltungKategorie[]` (implicit M2M)
+
+### VeranstaltungKategorie
+
+Freitext-Klassifizierung für Veranstaltungen (z. B. "Spielabend", "Turnier", "Hauptversammlung"). Eigenständiges Modell — konzeptuell getrennt von den Buchungskategorien (`Category` in FinanceModule).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `name` | String | unique |
+| `description` | String? | |
+| `color` | String? | Hex-Farbe für UI, z. B. `"#FF5733"` |
+| `createdAt`, `updatedAt` | DateTime | |
+
+**Relation:** Implizite Many-to-Many mit `Veranstaltung` — Prisma legt automatisch eine Junction-Tabelle `_VeranstaltungToVeranstaltungKategorie` an. Eine Veranstaltung kann beliebig viele Kategorien haben; eine Kategorie kann beliebig vielen Veranstaltungen zugeordnet sein.
+
+**Kategorie-Verwaltung:**
+- CRUD unter `/veranstaltung-kategorien` (eigenes Modul `VeranstaltungKategorienModule`)
+- `GET /veranstaltung-kategorien` liefert immer `_count.veranstaltungen` mit — Frontend kann damit anzeigen, wie viele Events eine Kategorie nutzen
+- `DELETE` ist blockiert, solange `_count.veranstaltungen > 0` (HTTP 400 mit erklärender Message)
+
+**Zuweisung zu Veranstaltungen:**
+- `POST /veranstaltungen` — optionales Body-Feld `kategorieIds: number[]`; beim Create werden die angegebenen Kategorien direkt connected
+- `PATCH /veranstaltungen/:id` — optionales Body-Feld `kategorieIds: number[]`; **vollständiger Replace** des Kategorie-Sets via Prisma `set` (nicht additive — um Kategorien zu entfernen einfach die gewünschten IDs ohne die zu entfernenden senden, leeres Array `[]` entfernt alle)
+- Alle `GET /veranstaltungen`- und `GET /veranstaltungen/:id`-Responses enthalten `kategorien: VeranstaltungKategorie[]`
+
+**Trennung von FinanceModule-Kategorien:**
+`VeranstaltungKategorie` ≠ `Category`. Finance-`Category` hat `isMitgliedsbeitrag`-Flag und steuert Buchungslogik. `VeranstaltungKategorie` ist reine Taxonomie ohne Geschäftslogik. Beide existieren unabhängig voneinander.
 
 ### VeranstaltungAttachment
 
@@ -351,10 +379,10 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/veranstaltungen` | 0 | All events; includes `_count` for transactions and attachments |
-| POST | `/veranstaltungen` | 5 | Create; body: `name`, `date` (ISO string), `description?`; auto-creates `VeranstaltungForm` from current template snapshot |
-| GET | `/veranstaltungen/:id` | 0 | Single event incl. transactions (with category + member), attachments, form with rows |
-| PATCH | `/veranstaltungen/:id` | 5 | Update `name`, `date`, `description` |
+| GET | `/veranstaltungen` | 0 | All events; includes `_count` for transactions and attachments, `kategorien[]` |
+| POST | `/veranstaltungen` | 5 | Create; body: `name`, `date` (ISO string), `description?`, `kategorieIds?: number[]`; auto-creates `VeranstaltungForm` from current template snapshot |
+| GET | `/veranstaltungen/:id` | 0 | Single event incl. transactions (with category + member), attachments, form with rows, `kategorien[]` |
+| PATCH | `/veranstaltungen/:id` | 5 | Update `name`, `date`, `description`, `kategorieIds?: number[]` (full replace of category set) |
 | DELETE | `/veranstaltungen/:id` | 5 | Delete event + cascade (form, rows, attachments); also deletes attachment files from disk |
 | GET | `/veranstaltungen/:id/financials` | 0 | `{ einnahmen, ausgaben, saldo }` — computed live from linked transactions; RUECKBUCHUNG direction resolved via related transaction type |
 | GET | `/veranstaltungen/:id/all-attachments` | 0 | `{ direct: VeranstaltungAttachment[], fromTransactions: TransactionAttachment[] }` — all attachments reachable under this event |
@@ -386,6 +414,16 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/files/:id/preview` | 0 | Inline view with `Content-Disposition: inline` (PDF/image) |
 | PATCH | `/files/:id` | 5 | Update `description` and/or `path` |
 | DELETE | `/files/:id` | 5 | Delete DB record + file from disk |
+
+### Veranstaltung-Kategorien
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/veranstaltung-kategorien` | 0 | All categories incl. `_count.veranstaltungen` |
+| GET | `/veranstaltung-kategorien/:id` | 0 | Single category |
+| POST | `/veranstaltung-kategorien` | 5 | Create; `name` (unique), `description?`, `color?` |
+| PATCH | `/veranstaltung-kategorien/:id` | 5 | Update any field |
+| DELETE | `/veranstaltung-kategorien/:id` | 5 | Blocked if any events use this category |
 
 ## iCal-Feed (`GET /veranstaltungen/ical`)
 
@@ -476,6 +514,8 @@ oder Downgrade auf v8 (rein CJS).
 **Veranstaltung form template snapshot:** The global `VeranstaltungFormTemplate` defines the column schema. On Veranstaltung creation the current `columns` JSON is copied into the `VeranstaltungForm` record (snapshot). All subsequent template edits only affect future Veranstaltungen. Row `cells` is a free `{ [columnId]: value }` map — no server-side enforcement of column schema, frontend is responsible for matching cells to the form's column list.
 
 **Veranstaltung all-attachments aggregation:** `GET /veranstaltungen/:id/all-attachments` is a separate endpoint (not embedded in `GET /:id`) to keep the main detail response lean and allow independent caching. Returns `direct` (VeranstaltungAttachment) and `fromTransactions` (TransactionAttachment, each tagged with its transaction summary) as distinct arrays.
+
+**VeranstaltungKategorie — implicit M2M, full-replace PATCH:** Prisma implicit many-to-many was chosen over an explicit junction model because no extra data is needed on the join (just the two FKs). The `PATCH /veranstaltungen/:id` strategy uses Prisma's `set` (full replace) rather than additive `connect`/`disconnect` — this keeps the frontend contract simple: always send the complete desired set of IDs. Omitting `kategorieIds` from the PATCH body leaves the current categories unchanged. Sending `[]` explicitly removes all categories. Delete of a `VeranstaltungKategorie` is blocked server-side (HTTP 400) as long as any event references it — prevents silent orphaning of event classifications.
 
 ## Seeder (`src/seed.ts`)
 

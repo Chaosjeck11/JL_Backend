@@ -156,6 +156,18 @@ model Veranstaltung {
   transactions Transaction[]
   attachments  VeranstaltungAttachment[]
   form         VeranstaltungForm?
+  kategorien   VeranstaltungKategorie[]
+}
+
+model VeranstaltungKategorie {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  color       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  veranstaltungen Veranstaltung[]
 }
 
 model VeranstaltungAttachment {

@@ -27,6 +27,7 @@ export class VeranstaltungenService {
       orderBy: { date: "desc" },
       include: {
         _count: { select: { transactions: true, attachments: true } },
+        kategorien: true,
       },
     });
   }
@@ -44,6 +45,7 @@ export class VeranstaltungenService {
         },
         attachments: { orderBy: { uploadedAt: "asc" } },
         form: { include: { rows: { orderBy: { rowIndex: "asc" } } } },
+        kategorien: true,
       },
     });
     if (!v) throw new NotFoundException(`Veranstaltung ${id} nicht gefunden.`);
@@ -63,8 +65,11 @@ export class VeranstaltungenService {
             columns: (template.columns as Prisma.InputJsonValue) ?? [],
           },
         },
+        ...(dto.kategorieIds?.length && {
+          kategorien: { connect: dto.kategorieIds.map((id) => ({ id })) },
+        }),
       },
-      include: { form: true },
+      include: { form: true, kategorien: true },
     });
   }
 
@@ -76,7 +81,11 @@ export class VeranstaltungenService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.date !== undefined && { date: new Date(dto.date) }),
         ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.kategorieIds !== undefined && {
+          kategorien: { set: dto.kategorieIds.map((kid) => ({ id: kid })) },
+        }),
       },
+      include: { kategorien: true },
     });
   }
 
