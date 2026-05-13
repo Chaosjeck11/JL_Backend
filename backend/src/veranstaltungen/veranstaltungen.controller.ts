@@ -149,6 +149,15 @@ export class VeranstaltungenController {
     return this.service.getForm(id);
   }
 
+  @Patch(":id/form")
+  @AccessLevel(5)
+  updateFormColumns(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateFormTemplateDto,
+  ) {
+    return this.service.updateFormColumns(id, dto.columns);
+  }
+
   @Post(":id/form/rows")
   @AccessLevel(5)
   addFormRow(

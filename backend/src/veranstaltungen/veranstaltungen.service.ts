@@ -252,6 +252,17 @@ export class VeranstaltungenService {
     await this.prisma.veranstaltungFormRow.delete({ where: { id: rowId } });
   }
 
+  async updateFormColumns(id: number, columns: Array<{ id: string; label: string; type: string }>) {
+    const form = await this.prisma.veranstaltungForm.findUnique({
+      where: { veranstaltungId: id },
+    });
+    if (!form) throw new NotFoundException(`Formular für Veranstaltung ${id} nicht gefunden.`);
+    return this.prisma.veranstaltungForm.update({
+      where: { id: form.id },
+      data: { columns },
+    });
+  }
+
   // ── Form Template ──────────────────────────────────────────────────────────
 
   async getOrCreateTemplate() {
