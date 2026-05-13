@@ -6,4 +6,5 @@ export class UpdateTransactionDto {
   categoryId?: number;
   memberId?: number | null;
   tag?: PaymentTag | null;
+  veranstaltungId?: number | null;
 }

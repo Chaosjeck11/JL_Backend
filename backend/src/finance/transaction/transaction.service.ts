@@ -22,6 +22,9 @@ const TRANSACTION_INCLUDE = {
       email: true,
     },
   },
+  veranstaltung: {
+    select: { id: true, name: true },
+  },
 } satisfies Prisma.TransactionInclude;
 
 interface FindAllFilters {
@@ -134,6 +137,11 @@ export class TransactionService {
       data.member = dto.memberId ? { connect: { id: dto.memberId } } : { disconnect: true };
     }
     if (dto.tag !== undefined) data.tag = dto.tag ?? null;
+    if (dto.veranstaltungId !== undefined) {
+      data.veranstaltung = dto.veranstaltungId
+        ? { connect: { id: dto.veranstaltungId } }
+        : { disconnect: true };
+    }
 
     return this.prisma.transaction.update({
       where: { id },

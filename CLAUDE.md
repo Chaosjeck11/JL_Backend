@@ -59,6 +59,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
   - `Mitgliedsbeitrag` — Beitragsverwaltung je Member × Geschäftsjahr
   - `Attachment` — Dateianhänge (Belege, Rechnungen, PDFs) an Transaktionen; Multer-Upload auf lokalem Filesystem
 - `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all reads; AccessLevel(5) for upload, update, delete.
+- `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Two controllers in one module: `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments) and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
 
 **Authorization flow:**
 
@@ -151,6 +152,8 @@ Belongs to `BusinessYear`, `Category`, and optionally `Member`. The `type` enum:
 
 `memberId` (optional): when set on an `EINZAHLUNG` with `isMitgliedsbeitrag` category, the `Mitgliedsbeitrag` record for that member × year is updated automatically. On deletion, the record is recomputed from remaining transactions.
 
+`veranstaltungId` (optional): links the transaction to a `Veranstaltung`. Settable on create and updatable via PATCH (nullable — send `null` to unlink). Response always includes `veranstaltung: { id, name } | null`.
+
 Has a `attachments` relation to `TransactionAttachment` (`onDelete: Cascade`).
 
 ### TransactionAttachment
@@ -174,6 +177,70 @@ All upload directories are under `/app/uploads/` and covered by the same Docker 
 - `uploads/attachments/` — Transaction attachments (all mimetypes, no size limit configured)
 - `uploads/member-attachments/` — Member attachments (all mimetypes, max 50 MB)
 - `uploads/files/` — General FilesModule uploads (all mimetypes, max 50 MB)
+- `uploads/veranstaltung-attachments/` — Direct Veranstaltung attachments (all mimetypes, max 50 MB)
+
+### Veranstaltung
+
+Event record. Each Veranstaltung gets a `VeranstaltungForm` created automatically at creation time (snapshot of the current global template columns).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `name` | String | |
+| `date` | DateTime | |
+| `description` | String? | |
+| `createdAt`, `updatedAt` | DateTime | |
+
+Relations: `transactions Transaction[]`, `attachments VeranstaltungAttachment[]`, `form VeranstaltungForm?`
+
+### VeranstaltungAttachment
+
+Direct file attachments on a `Veranstaltung` (not tied to a specific transaction). `onDelete: Cascade`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `veranstaltungId` | Int | FK → Veranstaltung (cascade delete) |
+| `filename` | String | original filename |
+| `storedName` | String | unique UUID-based filename on disk |
+| `mimeType` | String | |
+| `size` | Int | bytes |
+| `uploadedAt` | DateTime | default now() |
+
+Files stored at `uploads/veranstaltung-attachments/`.
+
+### VeranstaltungFormTemplate
+
+Singleton — only one record ever exists (id=1, created lazily on first access). Defines the column structure applied to new Veranstaltungen. Changes do **not** affect existing forms.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `columns` | Json | `Array<{ id: string, label: string, type: string }>` |
+| `updatedAt` | DateTime | |
+
+### VeranstaltungForm
+
+One-to-one with `Veranstaltung`. Created automatically on Veranstaltung creation with a snapshot of the template's `columns`. The snapshot is immutable — subsequent template changes don't alter existing forms.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `veranstaltungId` | Int | unique FK → Veranstaltung (cascade delete) |
+| `columns` | Json | snapshot of template columns at creation time |
+| `createdAt`, `updatedAt` | DateTime | |
+
+### VeranstaltungFormRow
+
+Individual rows of a `VeranstaltungForm`. `cells` is a free JSON map of `{ columnId: value }`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `formId` | Int | FK → VeranstaltungForm (cascade delete) |
+| `rowIndex` | Int | display order; auto-incremented if not provided on create |
+| `cells` | Json | `{ [columnId: string]: unknown }` |
+| `createdAt`, `updatedAt` | DateTime | |
 
 ### Mitgliedsbeitrag
 
@@ -259,7 +326,7 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/finance/transactions/balance/:businessYearId` | 0 | Running balance array (uses live carryOver) |
 | GET | `/finance/transactions/:id` | 0 | Single transaction incl. category, businessYear, member, reversals |
 | POST | `/finance/transactions` | 5 | Create with validation; updates Mitgliedsbeitrag if applicable; optional `tag: ONLINE\|BAR` |
-| PATCH | `/finance/transactions/:id` | 5 | date, description, categoryId, memberId, tag (nullable) |
+| PATCH | `/finance/transactions/:id` | 5 | date, description, categoryId, memberId, tag (nullable), veranstaltungId (nullable — send null to unlink) |
 | DELETE | `/finance/transactions/:id` | 5 | Only if no reversals; recomputes Mitgliedsbeitrag if applicable |
 
 ### Finance — Mitgliedsbeiträge
@@ -280,6 +347,33 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | GET | `/finance/transactions/:id/attachments/:aid/download` | 0 | Download file with original filename |
 | DELETE | `/finance/transactions/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
 
+### Veranstaltungen
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/veranstaltungen` | 0 | All events; includes `_count` for transactions and attachments |
+| POST | `/veranstaltungen` | 5 | Create; body: `name`, `date` (ISO string), `description?`; auto-creates `VeranstaltungForm` from current template snapshot |
+| GET | `/veranstaltungen/:id` | 0 | Single event incl. transactions (with category + member), attachments, form with rows |
+| PATCH | `/veranstaltungen/:id` | 5 | Update `name`, `date`, `description` |
+| DELETE | `/veranstaltungen/:id` | 5 | Delete event + cascade (form, rows, attachments); also deletes attachment files from disk |
+| GET | `/veranstaltungen/:id/financials` | 0 | `{ einnahmen, ausgaben, saldo }` — computed live from linked transactions; RUECKBUCHUNG direction resolved via related transaction type |
+| GET | `/veranstaltungen/:id/all-attachments` | 0 | `{ direct: VeranstaltungAttachment[], fromTransactions: TransactionAttachment[] }` — all attachments reachable under this event |
+| GET | `/veranstaltungen/:id/attachments` | 0 | Direct attachments only |
+| POST | `/veranstaltungen/:id/attachments` | 5 | Upload direct attachment (multipart/form-data, field `file`); all mimetypes, max 50 MB |
+| GET | `/veranstaltungen/:id/attachments/:aid/download` | 0 | Download with `Content-Disposition: attachment` |
+| DELETE | `/veranstaltungen/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
+| GET | `/veranstaltungen/:id/form` | 0 | Form columns snapshot + all rows ordered by `rowIndex` |
+| POST | `/veranstaltungen/:id/form/rows` | 5 | Add row; body: `cells?: { [colId]: value }`, `rowIndex?` (auto-appended if omitted) |
+| PATCH | `/veranstaltungen/:id/form/rows/:rowId` | 5 | Update `cells` and/or `rowIndex` |
+| DELETE | `/veranstaltungen/:id/form/rows/:rowId` | 5 | Delete row |
+
+### Veranstaltung Form Template
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/veranstaltung-form-template` | 0 | Get global template (created lazily if not exists); `columns: Array<{ id, label, type }>` |
+| PATCH | `/veranstaltung-form-template` | 5 | Replace `columns` array; only affects new Veranstaltungen created after this change |
+
 ### Files
 
 | Method | Route | AccessLevel | Description |
@@ -299,6 +393,10 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 **Mitgliedsbeitrag auto-payment:** Payments are allocated JL-first. Status transitions automatically: `AUSSTEHEND → TEILWEISE → BEZAHLT`. Manual override available via PATCH.
 
 **inactiveSince vs active:** `active` is the fast boolean flag. `inactiveSince` records the exact timestamp and is used to determine whether a member owed fees for a given year (if they were active at the year's start date).
+
+**Veranstaltung form template snapshot:** The global `VeranstaltungFormTemplate` defines the column schema. On Veranstaltung creation the current `columns` JSON is copied into the `VeranstaltungForm` record (snapshot). All subsequent template edits only affect future Veranstaltungen. Row `cells` is a free `{ [columnId]: value }` map — no server-side enforcement of column schema, frontend is responsible for matching cells to the form's column list.
+
+**Veranstaltung all-attachments aggregation:** `GET /veranstaltungen/:id/all-attachments` is a separate endpoint (not embedded in `GET /:id`) to keep the main detail response lean and allow independent caching. Returns `direct` (VeranstaltungAttachment) and `fromTransactions` (TransactionAttachment, each tagged with its transaction summary) as distinct arrays.
 
 ## Seeder (`src/seed.ts`)
 

@@ -10,4 +10,5 @@ export class CreateTransactionDto {
   memberId?: number;
   relatedTransactionId?: number;
   tag?: PaymentTag;
+  veranstaltungId?: number;
 }

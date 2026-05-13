@@ -119,6 +119,7 @@ model Transaction {
   memberId             Int?
   relatedTransactionId Int?
   tag                  PaymentTag?
+  veranstaltungId      Int?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
@@ -128,6 +129,7 @@ model Transaction {
   relatedTransaction Transaction?            @relation("Rueckbuchung", fields: [relatedTransactionId], references: [id])
   reversals          Transaction[]           @relation("Rueckbuchung")
   attachments        TransactionAttachment[]
+  veranstaltung      Veranstaltung?          @relation(fields: [veranstaltungId], references: [id])
 }
 
 model TransactionAttachment {
@@ -139,6 +141,59 @@ model TransactionAttachment {
   mimeType      String
   size          Int
   uploadedAt    DateTime    @default(now())
+}
+
+// ── Veranstaltungen module ────────────────────────────────────────────────────
+
+model Veranstaltung {
+  id          Int      @id @default(autoincrement())
+  name        String
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions Transaction[]
+  attachments  VeranstaltungAttachment[]
+  form         VeranstaltungForm?
+}
+
+model VeranstaltungAttachment {
+  id              Int           @id @default(autoincrement())
+  veranstaltungId Int
+  veranstaltung   Veranstaltung @relation(fields: [veranstaltungId], references: [id], onDelete: Cascade)
+  filename        String
+  storedName      String        @unique
+  mimeType        String
+  size            Int
+  uploadedAt      DateTime      @default(now())
+}
+
+model VeranstaltungFormTemplate {
+  id        Int      @id @default(autoincrement())
+  columns   Json     @default("[]")
+  updatedAt DateTime @updatedAt
+}
+
+model VeranstaltungForm {
+  id              Int           @id @default(autoincrement())
+  veranstaltungId Int           @unique
+  veranstaltung   Veranstaltung @relation(fields: [veranstaltungId], references: [id], onDelete: Cascade)
+  columns         Json          @default("[]")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  rows VeranstaltungFormRow[]
+}
+
+model VeranstaltungFormRow {
+  id        Int               @id @default(autoincrement())
+  formId    Int
+  form      VeranstaltungForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  rowIndex  Int
+  cells     Json              @default("{}")
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 }
 
 model Mitgliedsbeitrag {
