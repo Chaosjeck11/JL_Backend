@@ -61,6 +61,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 - `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all reads; AccessLevel(5) for upload, update, delete.
 - `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Three controllers in one module: `VeranstaltungenICalController` (public iCal feed, no guards), `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments), and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
 - `VeranstaltungKategorienModule` — CRUD for `VeranstaltungKategorie` records at route `/veranstaltung-kategorien`. Many-to-many relation to `Veranstaltung`. Fields: `name` (unique), `description?`, `color?`. Delete blocked if category is used by any event.
+- `StrafenModule` — Strafenkatalog und Strafenverfolgung unter `/strafen` und `/strafen/eintraege`. Zwei Controller in einem Modul: `StrafeEintraegeController` (Einträge + Summary, registriert zuerst damit `/eintraege` vor `/:id` aufgelöst wird) und `StrafenController` (Katalog-CRUD). Keine Dateiuploads.
 
 **Authorization flow:**
 
@@ -301,6 +302,36 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 
 **Manueller Backfill:** `POST /finance/mitgliedsbeitraege/generate` (AccessLevel 5) — erstellt fehlende Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre (idempotent via upsert).
 
+### Strafe
+
+Katalog der Strafarten — verwaltet von Admins.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `name` | String | unique |
+| `beschreibung` | String? | |
+| `betrag` | Float | Betrag in € pro Eintrag |
+| `createdAt`, `updatedAt` | DateTime | |
+
+Delete blocked (HTTP 400) if any `StrafeEintrag` records reference this catalog entry.
+
+### StrafeEintrag
+
+Einzelne Strafen-Zuweisung: ein Mitglied hat eine bestimmte Strafe in einem Geschäftsjahr erhalten.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `memberId` | Int | FK → Member |
+| `strafeId` | Int | FK → Strafe |
+| `businessYearId` | Int | FK → BusinessYear |
+| `grund` | String? | optionale Begründung / Notiz |
+| `bezahlt` | Boolean | default false |
+| `createdAt`, `updatedAt` | DateTime | |
+
+Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /strafen/eintraege/summary`.
+
 ## API Routes
 
 ### Members
@@ -425,6 +456,27 @@ Payments fill JL first, then KG. Status is computed automatically; can be manual
 | PATCH | `/veranstaltung-kategorien/:id` | 5 | Update any field |
 | DELETE | `/veranstaltung-kategorien/:id` | 5 | Blocked if any events use this category |
 
+### Strafenkatalog
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/strafen` | 0 | All catalog entries incl. `_count.eintraege` |
+| GET | `/strafen/:id` | 0 | Single catalog entry |
+| POST | `/strafen` | 5 | Create; `name` (unique), `betrag`, `beschreibung?` |
+| PATCH | `/strafen/:id` | 5 | Update any field |
+| DELETE | `/strafen/:id` | 5 | Blocked if any `StrafeEintrag` records exist for this type |
+
+### Strafen — Einträge
+
+| Method | Route | AccessLevel | Description |
+|--------|-------|-------------|-------------|
+| GET | `/strafen/eintraege` | 0 | All entries; optional `?memberId=&strafeId=&businessYearId=&bezahlt=` |
+| GET | `/strafen/eintraege/summary` | 0 | Aggregiert nach Member × Geschäftsjahr; optional `?memberId=&businessYearId=`; returns `anzahlGesamt`, `anzahlBezahlt`, `anzahlOffen`, `gesamtbetrag`, `bezahltBetrag`, `offenBetrag` |
+| GET | `/strafen/eintraege/:id` | 0 | Single entry incl. member, strafe, businessYear |
+| POST | `/strafen/eintraege` | 5 | Assign penalty; body: `memberId`, `strafeId`, `businessYearId`, `grund?` |
+| PATCH | `/strafen/eintraege/:id` | 5 | Update `bezahlt` and/or `grund` |
+| DELETE | `/strafen/eintraege/:id` | 5 | Delete entry |
+
 ## iCal-Feed (`GET /veranstaltungen/ical`)
 
 Öffentlicher Kalender-Feed aller Veranstaltungen im iCalendar-Format (RFC 5545). Kein JWT-Token erforderlich — direkt abonnierbar in Google Calendar, Samsung Calendar, Apple Calendar etc.
@@ -514,6 +566,8 @@ oder Downgrade auf v8 (rein CJS).
 **Veranstaltung form template snapshot:** The global `VeranstaltungFormTemplate` defines the column schema. On Veranstaltung creation the current `columns` JSON is copied into the `VeranstaltungForm` record (snapshot). All subsequent template edits only affect future Veranstaltungen. Row `cells` is a free `{ [columnId]: value }` map — no server-side enforcement of column schema, frontend is responsible for matching cells to the form's column list.
 
 **Veranstaltung all-attachments aggregation:** `GET /veranstaltungen/:id/all-attachments` is a separate endpoint (not embedded in `GET /:id`) to keep the main detail response lean and allow independent caching. Returns `direct` (VeranstaltungAttachment) and `fromTransactions` (TransactionAttachment, each tagged with its transaction summary) as distinct arrays.
+
+**Strafen summary aggregation:** `GET /strafen/eintraege/summary` does not use a DB `GROUP BY` — it fetches all matching `StrafeEintrag` rows with their `strafe.betrag` and aggregates in-memory. Simple and avoids raw SQL; acceptable because penalty counts per member/year are small. The `StrafeEintraegeController` is registered before `StrafenController` in `strafen.module.ts` so NestJS resolves `/strafen/eintraege` before the parameterized `/strafen/:id`.
 
 **VeranstaltungKategorie — implicit M2M, full-replace PATCH:** Prisma implicit many-to-many was chosen over an explicit junction model because no extra data is needed on the join (just the two FKs). The `PATCH /veranstaltungen/:id` strategy uses Prisma's `set` (full replace) rather than additive `connect`/`disconnect` — this keeps the frontend contract simple: always send the complete desired set of IDs. Omitting `kategorieIds` from the PATCH body leaves the current categories unchanged. Sending `[]` explicitly removes all categories. Delete of a `VeranstaltungKategorie` is blocked server-side (HTTP 400) as long as any event references it — prevents silent orphaning of event classifications.
 
