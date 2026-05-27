@@ -18,6 +18,7 @@ import { CreateStrafeDto } from "./dto/create-strafe.dto";
 import { UpdateStrafeDto } from "./dto/update-strafe.dto";
 import { CreateStrafeEintragDto } from "./dto/create-strafe-eintrag.dto";
 import { UpdateStrafeEintragDto } from "./dto/update-strafe-eintrag.dto";
+import { BezahlenEintragDto } from "./dto/bezahlen-eintrag.dto";
 import { AccessLevel } from "../auth/access-level.decorator";
 import { AccessLevelGuard } from "../auth/access-level.guard";
 
@@ -115,6 +116,21 @@ export class StrafeEintraegeController {
     @Body() dto: UpdateStrafeEintragDto,
   ) {
     return this.service.updateEintrag(id, dto);
+  }
+
+  @Post(":id/bezahlen")
+  @AccessLevel(5)
+  bezahlen(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: BezahlenEintragDto,
+  ) {
+    return this.service.bezahlenEintrag(id, dto);
+  }
+
+  @Post(":id/stornieren")
+  @AccessLevel(5)
+  stornieren(@Param("id", ParseIntPipe) id: number) {
+    return this.service.stornierenEintrag(id);
   }
 
   @Delete(":id")

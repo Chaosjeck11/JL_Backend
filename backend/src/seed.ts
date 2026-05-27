@@ -8,6 +8,7 @@ const prisma = new PrismaClient();
 const DEFAULT_CATEGORIES = [
   { name: "Mitgliedsbeitrag", description: "Beiträge der Vereinsmitglieder", isMitgliedsbeitrag: true },
   { name: "Übertrag", description: "Jahresübertrag aus dem Vorjahr", isMitgliedsbeitrag: false },
+  { name: "Strafe", description: "Strafen der Vereinsmitglieder", isMitgliedsbeitrag: false },
 ];
 
 async function seedCategories() {
