@@ -13,6 +13,7 @@ async function bootstrap() {
       "https://tauri.localhost",
       "http://localhost:1420",
       "http://tauri.localhost",
+      "https://jl.ct-2514.de",
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

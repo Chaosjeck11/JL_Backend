@@ -44,7 +44,7 @@ export class MemberAttachmentController {
   constructor(private attachmentService: MemberAttachmentService) {}
 
   @Get()
-  @AccessLevel(0)
+  @AccessLevel(2)
   findAll(@Param("memberId", ParseIntPipe) memberId: number) {
     return this.attachmentService.findAll(memberId);
   }
@@ -61,7 +61,7 @@ export class MemberAttachmentController {
   }
 
   @Get(":attachmentId/download")
-  @AccessLevel(0)
+  @AccessLevel(2)
   async download(
     @Param("memberId", ParseIntPipe) memberId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,

@@ -24,13 +24,13 @@ export class BusinessYearController {
   constructor(private businessYearService: BusinessYearService) {}
 
   @Get()
-  @AccessLevel(0)
+  @AccessLevel(3)
   findAll() {
     return this.businessYearService.findAll();
   }
 
   @Get(":id")
-  @AccessLevel(0)
+  @AccessLevel(3)
   findOne(@Param("id", ParseIntPipe) id: number) {
     return this.businessYearService.findOne(id);
   }

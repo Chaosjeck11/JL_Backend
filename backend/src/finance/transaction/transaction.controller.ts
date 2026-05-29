@@ -26,7 +26,7 @@ export class TransactionController {
   constructor(private transactionService: TransactionService) {}
 
   @Get()
-  @AccessLevel(0)
+  @AccessLevel(3)
   findAll(
     @Query("businessYearId") businessYearId?: string,
     @Query("categoryId") categoryId?: string,
@@ -43,7 +43,7 @@ export class TransactionController {
 
   // Defined before /:id to prevent "balance" being captured as an id param
   @Get("balance/:businessYearId")
-  @AccessLevel(0)
+  @AccessLevel(3)
   getRunningBalance(
     @Param("businessYearId", ParseIntPipe) businessYearId: number,
   ) {
@@ -51,19 +51,19 @@ export class TransactionController {
   }
 
   @Get(":id")
-  @AccessLevel(0)
+  @AccessLevel(3)
   findOne(@Param("id", ParseIntPipe) id: number) {
     return this.transactionService.findOne(id);
   }
 
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(4)
   create(@Body() dto: CreateTransactionDto) {
     return this.transactionService.create(dto);
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateTransactionDto,
@@ -72,7 +72,7 @@ export class TransactionController {
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.transactionService.remove(id);

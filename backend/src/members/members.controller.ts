@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Req,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -16,7 +17,7 @@ import {
   Res,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { MembersService } from "./members.service";
 import { CreateMemberDto } from "./dto/create-member.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
@@ -29,11 +30,16 @@ import { AccessLevelGuard } from "../auth/access-level.guard";
 export class MembersController {
   constructor(private members: MembersService) {}
 
-  // 🔍 Alle Mitglieder (lesen reicht)
+  // L0/L1 get only id, firstname, lastname. L2+ get full record.
   @Get()
   @AccessLevel(0)
-  findAll() {
-    return this.members.findAll();
+  async findAll(@Req() req: Request) {
+    const level = (req.user as any).accessLevel as number;
+    const list = await this.members.findAll();
+    if (level < 2) {
+      return list.map((m) => ({ id: m.id, firstname: m.firstname, lastname: m.lastname }));
+    }
+    return list;
   }
 
   @Get("roles")
@@ -42,23 +48,23 @@ export class MembersController {
     return this.members.findAllRoles();
   }
 
-  // 🔍 Einzelnes Mitglied
+  // Detail view: Orgateam (L2) and above only
   @Get(":id")
-  @AccessLevel(0)
+  @AccessLevel(2)
   findOne(@Param("id", ParseIntPipe) id: number) {
     return this.members.findOne(id);
   }
 
-  // ➕ Neues Mitglied (Admin)
+  // Create: Admin only
   @Post()
   @AccessLevel(5)
   create(@Body() dto: CreateMemberDto) {
     return this.members.create(dto);
   }
 
-  // ✏️ Mitglied ändern (Admin)
+  // Edit general fields: Vorstand (L3) and above
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(3)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateMemberDto,
@@ -66,7 +72,7 @@ export class MembersController {
     return this.members.update(id, dto);
   }
 
-  // 🚫 Mitglied deaktivieren
+  // Deactivate: Admin only
   @Patch(":id/deactivate")
   @AccessLevel(5)
   deactivate(@Param("id", ParseIntPipe) id: number) {

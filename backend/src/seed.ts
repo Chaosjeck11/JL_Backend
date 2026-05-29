@@ -99,6 +99,30 @@ async function seedAdminUser() {
     create: { name: "Mitglied", description: "Einfaches Vereinsmitglied", accessLevel: 0 },
   });
 
+  await prisma.role.upsert({
+    where: { name: "Strafenwart" },
+    update: { accessLevel: 1 },
+    create: { name: "Strafenwart", description: "Vollzugriff auf Strafenverwaltung", accessLevel: 1 },
+  });
+
+  await prisma.role.upsert({
+    where: { name: "Orgateam" },
+    update: { accessLevel: 2 },
+    create: { name: "Orgateam", description: "Veranstaltungsorganisation und Mitgliederansicht", accessLevel: 2 },
+  });
+
+  await prisma.role.upsert({
+    where: { name: "Vorstand" },
+    update: { accessLevel: 3 },
+    create: { name: "Vorstand", description: "Vereinsführung mit erweitertem Lesezugriff", accessLevel: 3 },
+  });
+
+  await prisma.role.upsert({
+    where: { name: "Kassenwart" },
+    update: { accessLevel: 4 },
+    create: { name: "Kassenwart", description: "Vollzugriff auf Finanzen und Buchhaltung", accessLevel: 4 },
+  });
+
   const adminRole = await prisma.role.upsert({
     where: { name: "Admin" },
     update: { accessLevel: 5 },

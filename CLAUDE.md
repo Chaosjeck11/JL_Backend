@@ -67,9 +67,65 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 
 Every protected route uses two guards applied together at the controller level:
 1. `AuthGuard("jwt")` — validates the Bearer token via `JwtStrategy`, attaches the decoded payload as `request.user`.
-2. `AccessLevelGuard` — reads the `@AccessLevel(n)` decorator on the handler and compares it against `request.user.accessLevel`. Access level `0` = any authenticated user; `5` = admin operations (create, update, delete).
+2. `AccessLevelGuard` — reads the `@AccessLevel(n)` decorator on the handler and compares it against `request.user.accessLevel`. For non-linear cases (Strafen-Einträge, Members list) the handler itself performs additional runtime checks and throws `ForbiddenException`.
 
 `accessLevel` is defined on the **Role**, not the Member. The JWT payload reads `member.role.accessLevel` at login time. Changing a member's role automatically changes their effective permissions on next login.
+
+**Permissions matrix:**
+
+| Resource / Action | L0 Mitglied | L1 Strafenwart | L2 Orgateam | L3 Vorstand | L4 Kassenwart | L5 Admin |
+|---|---|---|---|---|---|---|
+| **Veranstaltungen** | | | | | | |
+| read | R | R | R | R | R | R |
+| create / edit / delete | — | — | W | W | W | W |
+| form rows write | — | — | W | W | W | W |
+| form template PATCH | — | — | — | — | — | W |
+| **Veranstaltung-Kategorien** | | | | | | |
+| read | R | R | R | R | R | R |
+| create / edit / delete | — | — | W | W | W | W |
+| **Members** | | | | | | |
+| list (id + name only) | R | R | R | R | R | R |
+| details (full record) | — | — | R | R | R | R |
+| create | — | — | — | — | — | W |
+| edit general fields | — | — | — | W | W | W |
+| deactivate / avatar / attachments write | — | — | — | — | — | W |
+| attachments read | — | — | R | R | R | R |
+| **Files** | | | | | | |
+| read / download / preview | R | R | R | R | R | R |
+| upload / edit / delete | — | — | — | — | — | W |
+| **Strafenkatalog** | | | | | | |
+| read | R | R | R | R | R | R |
+| create / edit / delete | — | — | — | — | — | W |
+| **Strafen Einträge** | | | | | | |
+| read own | R | R | R | R | R | R |
+| read all | — | R | — | R | R | R |
+| create | — | W | — | W | W | W |
+| edit `grund` | — | W | — | W | W | W |
+| mark bezahlt / stornieren | — | W | — | — | W | W |
+| delete | — | W | — | W | W | W |
+| summary (all) | — | R | — | R | R | R |
+| **Finance – Business Years** | | | | | | |
+| read | — | — | — | R | R | R |
+| create / edit / delete | — | — | — | — | — | W |
+| **Finance – Categories** | | | | | | |
+| read | — | — | — | R | R | R |
+| create / edit / delete | — | — | — | — | — | W |
+| **Finance – Transactions** | | | | | | |
+| read | — | — | — | R | R | R |
+| create / edit / delete | — | — | — | — | W | W |
+| **Finance – Transaction Attachments** | | | | | | |
+| read / download | — | — | — | R | R | R |
+| upload / delete | — | — | — | — | W | W |
+| **Finance – Mitgliedsbeiträge** | | | | | | |
+| read | — | — | — | R | R | R |
+| PATCH (mark bezahlt) | — | — | — | — | W | W |
+| generate backfill | — | — | — | — | — | W |
+| **iCal Feed** | public | public | public | public | public | public |
+
+**Non-linear logic in Strafen Einträge** (cannot be expressed as simple `>=` threshold):
+- L1 (Strafenwart) has full write including bezahlen, L2 (Orgateam) has none — although L2 > L1.
+- L3 (Vorstand) can create/edit/delete but NOT bezahlen/stornieren.
+- Implementation: `@AccessLevel(0)` on all Einträge write handlers + runtime level checks inside the handler body using `canWriteStrafen(level)` / `canPayStrafen(level)` / `canReadAllStrafen(level)` helpers in `strafen.controller.ts`.
 
 ## Data model
 
@@ -85,8 +141,12 @@ Defines the permission level for a group of members. `accessLevel` is stored her
 | `accessLevel` | Int | default 0 |
 
 Seeded roles:
-- **Mitglied** — `accessLevel: 0` (einfaches Vereinsmitglied, read-only access)
-- **Admin** — `accessLevel: 5` (Systemadministrator, full access)
+- **Mitglied** — `accessLevel: 0` (einfaches Vereinsmitglied, read-only)
+- **Strafenwart** — `accessLevel: 1` (Vollzugriff Strafenverwaltung)
+- **Orgateam** — `accessLevel: 2` (Veranstaltungen write, Mitglieder-Details read)
+- **Vorstand** — `accessLevel: 3` (Mitglieder edit, Finanzen read, Strafen read+write ohne bezahlen)
+- **Kassenwart** — `accessLevel: 4` (Finanzen Vollzugriff, Beiträge+Strafen bezahlen)
+- **Admin** — `accessLevel: 5` (Systemadministrator, Vollzugriff)
 
 ### Member
 

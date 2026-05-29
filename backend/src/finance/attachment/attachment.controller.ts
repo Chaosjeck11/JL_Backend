@@ -27,13 +27,13 @@ export class AttachmentController {
   constructor(private attachmentService: AttachmentService) {}
 
   @Get()
-  @AccessLevel(0)
+  @AccessLevel(3)
   findAll(@Param("transactionId", ParseIntPipe) transactionId: number) {
     return this.attachmentService.findAll(transactionId);
   }
 
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(4)
   @UseInterceptors(FileInterceptor("file"))
   upload(
     @Param("transactionId", ParseIntPipe) transactionId: number,
@@ -44,7 +44,7 @@ export class AttachmentController {
   }
 
   @Get(":attachmentId/download")
-  @AccessLevel(0)
+  @AccessLevel(3)
   async download(
     @Param("transactionId", ParseIntPipe) transactionId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
@@ -69,7 +69,7 @@ export class AttachmentController {
   }
 
   @Delete(":attachmentId")
-  @AccessLevel(5)
+  @AccessLevel(4)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(
     @Param("transactionId", ParseIntPipe) transactionId: number,

@@ -90,7 +90,7 @@ export class VeranstaltungenController {
   }
 
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(2)
   create(@Body() dto: CreateVeranstaltungDto) {
     return this.service.create(dto);
   }
@@ -102,7 +102,7 @@ export class VeranstaltungenController {
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(2)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateVeranstaltungDto,
@@ -111,7 +111,7 @@ export class VeranstaltungenController {
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(2)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.service.remove(id);
@@ -142,7 +142,7 @@ export class VeranstaltungenController {
   }
 
   @Post(":id/attachments")
-  @AccessLevel(5)
+  @AccessLevel(2)
   @UseInterceptors(FileInterceptor("file", multerOptions))
   uploadAttachment(
     @Param("id", ParseIntPipe) id: number,
@@ -167,7 +167,7 @@ export class VeranstaltungenController {
   }
 
   @Delete(":id/attachments/:aid")
-  @AccessLevel(5)
+  @AccessLevel(2)
   @HttpCode(HttpStatus.NO_CONTENT)
   removeAttachment(
     @Param("id", ParseIntPipe) id: number,
@@ -185,7 +185,7 @@ export class VeranstaltungenController {
   }
 
   @Patch(":id/form")
-  @AccessLevel(5)
+  @AccessLevel(2)
   updateFormColumns(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateFormTemplateDto,
@@ -194,7 +194,7 @@ export class VeranstaltungenController {
   }
 
   @Post(":id/form/rows")
-  @AccessLevel(5)
+  @AccessLevel(2)
   addFormRow(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: CreateFormRowDto,
@@ -203,7 +203,7 @@ export class VeranstaltungenController {
   }
 
   @Patch(":id/form/rows/:rowId")
-  @AccessLevel(5)
+  @AccessLevel(2)
   updateFormRow(
     @Param("id", ParseIntPipe) id: number,
     @Param("rowId", ParseIntPipe) rowId: number,
@@ -213,7 +213,7 @@ export class VeranstaltungenController {
   }
 
   @Delete(":id/form/rows/:rowId")
-  @AccessLevel(5)
+  @AccessLevel(2)
   @HttpCode(HttpStatus.NO_CONTENT)
   removeFormRow(
     @Param("id", ParseIntPipe) id: number,

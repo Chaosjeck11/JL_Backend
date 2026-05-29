@@ -24,13 +24,13 @@ export class CategoryController {
   constructor(private categoryService: CategoryService) {}
 
   @Get()
-  @AccessLevel(0)
+  @AccessLevel(3)
   findAll() {
     return this.categoryService.findAll();
   }
 
   @Get(":id")
-  @AccessLevel(0)
+  @AccessLevel(3)
   findOne(@Param("id", ParseIntPipe) id: number) {
     return this.categoryService.findOne(id);
   }

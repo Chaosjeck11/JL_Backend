@@ -36,13 +36,13 @@ export class VeranstaltungKategorienController {
   }
 
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(2)
   create(@Body() dto: CreateVeranstaltungKategorieDto) {
     return this.service.create(dto);
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(2)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateVeranstaltungKategorieDto,
@@ -51,7 +51,7 @@ export class VeranstaltungKategorienController {
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(2)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.service.remove(id);

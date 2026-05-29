@@ -28,7 +28,7 @@ export class MitgliedsbeitragController {
   }
 
   @Get()
-  @AccessLevel(0)
+  @AccessLevel(3)
   findAll(
     @Query("businessYearId") businessYearId?: string,
     @Query("memberId") memberId?: string,
@@ -42,13 +42,13 @@ export class MitgliedsbeitragController {
   }
 
   @Get(":id")
-  @AccessLevel(0)
+  @AccessLevel(3)
   findOne(@Param("id", ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateMitgliedsbeitragDto,
