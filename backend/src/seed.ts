@@ -147,6 +147,33 @@ async function seedAdminUser() {
   console.log("[Admin] Systemadmin-User sichergestellt.");
 }
 
+// ── Strafenkatalog ───────────────────────────────────────────────────────────
+
+const DEFAULT_STRAFEN = [
+  { name: "Nicht erscheinen trotz Zusage", beschreibung: "Mitglied hat zugesagt, ist aber nicht erschienen.", betrag: 10 },
+  { name: "Zu spät abgesagt", beschreibung: "Absage erfolgte zu kurzfristig.", betrag: 5 },
+  { name: "Zu spät / gar nicht bei Abstimmungen teilgenommen", beschreibung: "Abstimmungsfrist verpasst oder ignoriert.", betrag: 5 },
+  { name: "Nicht Einhaltung von Kleiderordnung", beschreibung: "Kleiderordnung bei Veranstaltung nicht eingehalten.", betrag: 5 },
+  { name: "Schädigendes Verhalten für den Verein", beschreibung: "Verhalten schadet dem Verein; Rauswurf möglich (entscheidet Leitung).", betrag: 25 },
+  { name: "Zahlungsfristen nicht eingehalten", beschreibung: "Fällige Zahlung nicht fristgerecht beglichen.", betrag: 5 },
+  { name: "Zu spät kommen ohne Bescheid (je 5 min)", beschreibung: "Pro angefangene 5 Minuten zu spät ohne vorherige Mitteilung an Präsident oder Geschäftsführer.", betrag: 2 },
+];
+
+async function seedStrafen() {
+  let processed = 0;
+
+  for (const s of DEFAULT_STRAFEN) {
+    await prisma.strafe.upsert({
+      where: { name: s.name },
+      update: { beschreibung: s.beschreibung, betrag: s.betrag },
+      create: s,
+    });
+    processed++;
+  }
+
+  console.log(`[Strafenkatalog] ${processed} verarbeitet (upsert).`);
+}
+
 // ── Einstiegspunkt ────────────────────────────────────────────────────────────
 
 async function main() {
@@ -155,6 +182,7 @@ async function main() {
   await seedAdminUser();
   await seedCategories();
   await seedBusinessYears();
+  await seedStrafen();
 
   console.log("\nSeed abgeschlossen.");
 }

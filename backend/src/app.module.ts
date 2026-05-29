@@ -7,8 +7,9 @@ import { FilesModule } from "./files/files.module";
 import { VeranstaltungenModule } from "./veranstaltungen/veranstaltungen.module";
 import { VeranstaltungKategorienModule } from "./veranstaltung-kategorien/veranstaltung-kategorien.module";
 import { StrafenModule } from "./strafen/strafen.module";
+import { UpdateModule } from "./update/update.module";
 
 @Module({
-  imports: [PrismaModule, AuthModule, MembersModule, FinanceModule, FilesModule, VeranstaltungenModule, VeranstaltungKategorienModule, StrafenModule],
+  imports: [PrismaModule, AuthModule, MembersModule, FinanceModule, FilesModule, VeranstaltungenModule, VeranstaltungKategorienModule, StrafenModule, UpdateModule],
 })
 export class AppModule {}
