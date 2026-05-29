@@ -36,13 +36,13 @@ export class CategoryController {
   }
 
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(4)
   create(@Body() dto: CreateCategoryDto) {
     return this.categoryService.create(dto);
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateCategoryDto,
@@ -51,7 +51,7 @@ export class CategoryController {
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.categoryService.remove(id);

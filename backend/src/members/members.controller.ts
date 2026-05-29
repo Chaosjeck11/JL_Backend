@@ -12,6 +12,7 @@ import {
   UploadedFile,
   ParseIntPipe,
   BadRequestException,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Res,
@@ -55,9 +56,9 @@ export class MembersController {
     return this.members.findOne(id);
   }
 
-  // Create: Admin only
+  // Create: Vorstand (L3) and above
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(3)
   create(@Body() dto: CreateMemberDto) {
     return this.members.create(dto);
   }
@@ -72,21 +73,27 @@ export class MembersController {
     return this.members.update(id, dto);
   }
 
-  // Deactivate: Admin only
+  // Deactivate: Vorstand (L3) and above
   @Patch(":id/deactivate")
-  @AccessLevel(5)
+  @AccessLevel(3)
   deactivate(@Param("id", ParseIntPipe) id: number) {
     return this.members.deactivate(id);
   }
 
+  // Avatar upload: own avatar only for L0-L4; L5 can change anyone's
   @Post(":id/avatar")
-  @AccessLevel(5)
+  @AccessLevel(0)
   @UseInterceptors(FileInterceptor("file"))
   uploadAvatar(
+    @Req() req: Request,
     @Param("id", ParseIntPipe) id: number,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException("No file uploaded");
+    const user = req.user as any;
+    if (user.accessLevel < 5 && user.sub !== id) {
+      throw new ForbiddenException("Nur eigenes Avatar ändern erlaubt");
+    }
     return this.members.uploadAvatar(id, file);
   }
 
@@ -98,10 +105,15 @@ export class MembersController {
     res.sendFile(filePath);
   }
 
+  // Avatar delete: own avatar only for L0-L4; L5 can delete anyone's
   @Delete(":id/avatar")
-  @AccessLevel(5)
+  @AccessLevel(0)
   @HttpCode(HttpStatus.NO_CONTENT)
-  removeAvatar(@Param("id", ParseIntPipe) id: number) {
+  removeAvatar(@Req() req: Request, @Param("id", ParseIntPipe) id: number) {
+    const user = req.user as any;
+    if (user.accessLevel < 5 && user.sub !== id) {
+      throw new ForbiddenException("Nur eigenes Avatar löschen erlaubt");
+    }
     return this.members.removeAvatar(id);
   }
 }

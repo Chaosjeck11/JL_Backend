@@ -58,7 +58,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
   - `Transaction` — Einzelbuchungen mit Rückbuchungslogik
   - `Mitgliedsbeitrag` — Beitragsverwaltung je Member × Geschäftsjahr
   - `Attachment` — Dateianhänge (Belege, Rechnungen, PDFs) an Transaktionen; Multer-Upload auf lokalem Filesystem
-- `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all reads; AccessLevel(5) for upload, update, delete.
+- `FilesModule` — General-purpose file manager at route `/files`. Multer disk storage to `uploads/files/`, UUID filenames, all mimetypes, max 50 MB. `uploadedBy` FK → Member (from JWT `sub`). AccessLevel(0) for all operations (read, upload, update, delete).
 - `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Three controllers in one module: `VeranstaltungenICalController` (public iCal feed, no guards), `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments), and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
 - `VeranstaltungKategorienModule` — CRUD for `VeranstaltungKategorie` records at route `/veranstaltung-kategorien`. Many-to-many relation to `Veranstaltung`. Fields: `name` (unique), `description?`, `color?`. Delete blocked if category is used by any event.
 - `StrafenModule` — Strafenkatalog und Strafenverfolgung unter `/strafen` und `/strafen/eintraege`. Zwei Controller in einem Modul: `StrafeEintraegeController` (Einträge + Summary, registriert zuerst damit `/eintraege` vor `/:id` aufgelöst wird) und `StrafenController` (Katalog-CRUD). Keine Dateiuploads.
@@ -86,16 +86,16 @@ Every protected route uses two guards applied together at the controller level:
 | **Members** | | | | | | |
 | list (id + name only) | R | R | R | R | R | R |
 | details (full record) | — | — | R | R | R | R |
-| create | — | — | — | — | — | W |
+| create / deactivate | — | — | — | W | W | W |
 | edit general fields | — | — | — | W | W | W |
-| deactivate / avatar / attachments write | — | — | — | — | — | W |
+| avatar upload / delete (own only) | R/W | R/W | R/W | R/W | R/W | R/W |
+| avatar / attachments write (any member) | — | — | — | — | — | W |
 | attachments read | — | — | R | R | R | R |
 | **Files** | | | | | | |
-| read / download / preview | R | R | R | R | R | R |
-| upload / edit / delete | — | — | — | — | — | W |
+| read / download / preview / upload / edit / delete | R/W | R/W | R/W | R/W | R/W | R/W |
 | **Strafenkatalog** | | | | | | |
 | read | R | R | R | R | R | R |
-| create / edit / delete | — | — | — | — | — | W |
+| create / edit / delete | — | W | — | W | W | W |
 | **Strafen Einträge** | | | | | | |
 | read own | R | R | R | R | R | R |
 | read all | — | R | — | R | R | R |
@@ -106,10 +106,10 @@ Every protected route uses two guards applied together at the controller level:
 | summary (all) | — | R | — | R | R | R |
 | **Finance – Business Years** | | | | | | |
 | read | — | — | — | R | R | R |
-| create / edit / delete | — | — | — | — | — | W |
+| create / edit / delete | — | — | — | — | W | W |
 | **Finance – Categories** | | | | | | |
 | read | — | — | — | R | R | R |
-| create / edit / delete | — | — | — | — | — | W |
+| create / edit / delete | — | — | — | — | W | W |
 | **Finance – Transactions** | | | | | | |
 | read | — | — | — | R | R | R |
 | create / edit / delete | — | — | — | — | W | W |
@@ -122,10 +122,11 @@ Every protected route uses two guards applied together at the controller level:
 | generate backfill | — | — | — | — | — | W |
 | **iCal Feed** | public | public | public | public | public | public |
 
-**Non-linear logic in Strafen Einträge** (cannot be expressed as simple `>=` threshold):
-- L1 (Strafenwart) has full write including bezahlen, L2 (Orgateam) has none — although L2 > L1.
-- L3 (Vorstand) can create/edit/delete but NOT bezahlen/stornieren.
-- Implementation: `@AccessLevel(0)` on all Einträge write handlers + runtime level checks inside the handler body using `canWriteStrafen(level)` / `canPayStrafen(level)` / `canReadAllStrafen(level)` helpers in `strafen.controller.ts`.
+**Non-linear logic** (cannot be expressed as simple `>=` threshold — implemented as runtime checks):
+- **Strafenkatalog write**: L1 (Strafenwart) und L3+ (Vorstand, Kassenwart, Admin) — nicht L2 (Orgateam). Gleiche Helper-Funktion `canWriteStrafen(level)` = `level === 1 || level >= 3`.
+- **Strafen Einträge**: L1 Vollzugriff inkl. bezahlen; L2 kein Zugriff; L3 create/edit/delete aber kein bezahlen; L4+ alles.
+- **Avatar**: Jeder User kann eigenes Avatar ändern (`req.user.sub === id`); L5 kann jedes Avatar ändern.
+- Implementation: `@AccessLevel(0)` + runtime-ForbiddenException in `strafen.controller.ts` und `members.controller.ts`.
 
 ## Data model
 
@@ -141,12 +142,12 @@ Defines the permission level for a group of members. `accessLevel` is stored her
 | `accessLevel` | Int | default 0 |
 
 Seeded roles:
-- **Mitglied** — `accessLevel: 0` (einfaches Vereinsmitglied, read-only)
-- **Strafenwart** — `accessLevel: 1` (Vollzugriff Strafenverwaltung)
-- **Orgateam** — `accessLevel: 2` (Veranstaltungen write, Mitglieder-Details read)
-- **Vorstand** — `accessLevel: 3` (Mitglieder edit, Finanzen read, Strafen read+write ohne bezahlen)
-- **Kassenwart** — `accessLevel: 4` (Finanzen Vollzugriff, Beiträge+Strafen bezahlen)
-- **Admin** — `accessLevel: 5` (Systemadministrator, Vollzugriff)
+- **Mitglied** — `accessLevel: 0` (Kalender/Events/Files lesen, eigene Strafen sehen, eigenes Avatar)
+- **Strafenwart** — `accessLevel: 1` (+ Strafenkatalog write, alle Strafen read/write/bezahlen)
+- **Orgateam** — `accessLevel: 2` (+ Veranstaltungen write, Mitglieder-Details read)
+- **Vorstand** — `accessLevel: 3` (+ Mitglieder create/deactivate/edit, Finanzen read, Strafen write ohne bezahlen, Strafenkatalog write)
+- **Kassenwart** — `accessLevel: 4` (+ Finanzen Vollzugriff inkl. Buchungen, Beiträge/Strafen bezahlen, Geschäftsjahre/Kategorien verwalten)
+- **Admin** — `accessLevel: 5` (Vollzugriff + Mitgliedsbeiträge-Backfill, Form-Template, Avatar anderer Member)
 
 ### Member
 
@@ -398,93 +399,93 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/members` | 0 | All members incl. role, mitgliedsbeitraege |
+| GET | `/members` | 0 | All members; L0/L1 get only `{id, firstname, lastname}`; L2+ get full record |
 | GET | `/members/roles` | 0 | All roles ordered by accessLevel |
-| GET | `/members/:id` | 0 | Single member incl. role, mitgliedsbeitraege, transactions |
-| POST | `/members` | 5 | Create member; required `roleId`; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
-| PATCH | `/members/:id` | 5 | Update any field except id/accessLevel; send `password` to update password (hashed server-side); `active`/`inactiveSince` directly settable; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
-| PATCH | `/members/:id/deactivate` | 5 | Sets active=false, inactiveSince=now() (bypasses Beitrag cleanup — use PATCH for that) |
-| POST | `/members/:id/avatar` | 5 | Upload avatar (multipart/form-data, field `file`; images only, max 5 MB); replaces old file |
+| GET | `/members/:id` | 2 | Single member incl. role, mitgliedsbeitraege, transactions |
+| POST | `/members` | 3 | Create member; required `roleId`; optional `joinedAt` (ISO string, default now()); creates Mitgliedsbeitrag for all business years ending after joinedAt |
+| PATCH | `/members/:id` | 3 | Update any field except id/accessLevel; send `password` to update password (hashed server-side); `active`/`inactiveSince` directly settable; optional `retroactiveYearIds: number[]` to apply fee changes to specific past years |
+| PATCH | `/members/:id/deactivate` | 3 | Sets active=false, inactiveSince=now() (bypasses Beitrag cleanup — use PATCH for that) |
+| POST | `/members/:id/avatar` | 0 | Upload avatar (multipart/form-data, field `file`; images only, max 5 MB); user can only upload own avatar unless L5 |
 | GET | `/members/:id/avatar` | 0 | Serve avatar image inline |
-| DELETE | `/members/:id/avatar` | 5 | Delete avatar file + clear avatarPath |
+| DELETE | `/members/:id/avatar` | 0 | Delete avatar file + clear avatarPath; user can only delete own avatar unless L5 |
 
 ### Members — Attachments
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/members/:id/attachments` | 0 | List attachments for member |
+| GET | `/members/:id/attachments` | 2 | List attachments for member |
 | POST | `/members/:id/attachments` | 5 | Upload file (multipart/form-data, field `file`); all mimetypes, max 50 MB |
-| GET | `/members/:id/attachments/:aid/download` | 0 | Download file with original filename |
+| GET | `/members/:id/attachments/:aid/download` | 2 | Download file with original filename |
 | DELETE | `/members/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
 
 ### Finance — Business Years
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/finance/business-years` | 0 | All years with startDate/endDate |
-| GET | `/finance/business-years/:id` | 0 | One year with totalIncome, totalExpenses, balance (live carryOver), startDate, endDate, mitgliedsbeitraege |
-| POST | `/finance/business-years` | 5 | Create; auto-sets carryOver from newest year's live balance; creates Mitgliedsbeitrag records |
-| PATCH | `/finance/business-years/:id` | 5 | Update carryOver (seed value for oldest year) |
-| DELETE | `/finance/business-years/:id` | 5 | Only if no transactions; also deletes Mitgliedsbeitrag records |
+| GET | `/finance/business-years` | 3 | All years with startDate/endDate |
+| GET | `/finance/business-years/:id` | 3 | One year with totalIncome, totalExpenses, balance (live carryOver), startDate, endDate, mitgliedsbeitraege |
+| POST | `/finance/business-years` | 4 | Create; auto-sets carryOver from newest year's live balance; creates Mitgliedsbeitrag records |
+| PATCH | `/finance/business-years/:id` | 4 | Update carryOver (seed value for oldest year) |
+| DELETE | `/finance/business-years/:id` | 4 | Only if no transactions; also deletes Mitgliedsbeitrag records |
 
 ### Finance — Categories
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/finance/categories` | 0 | All categories incl. isMitgliedsbeitrag |
-| GET | `/finance/categories/:id` | 0 | Single category |
-| POST | `/finance/categories` | 5 | Create; name must be unique |
-| PATCH | `/finance/categories/:id` | 5 | Update name, description, isMitgliedsbeitrag |
-| DELETE | `/finance/categories/:id` | 5 | Only if no transactions assigned |
+| GET | `/finance/categories` | 3 | All categories incl. isMitgliedsbeitrag |
+| GET | `/finance/categories/:id` | 3 | Single category |
+| POST | `/finance/categories` | 4 | Create; name must be unique |
+| PATCH | `/finance/categories/:id` | 4 | Update name, description, isMitgliedsbeitrag |
+| DELETE | `/finance/categories/:id` | 4 | Only if no transactions assigned |
 
 ### Finance — Transactions
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/finance/transactions` | 0 | All; optional `?businessYearId=&categoryId=&memberId=&type=` |
-| GET | `/finance/transactions/balance/:businessYearId` | 0 | Running balance array (uses live carryOver) |
-| GET | `/finance/transactions/:id` | 0 | Single transaction incl. category, businessYear, member, reversals |
-| POST | `/finance/transactions` | 5 | Create with validation; updates Mitgliedsbeitrag if applicable; optional `tag: ONLINE\|BAR` |
-| PATCH | `/finance/transactions/:id` | 5 | date, description, categoryId, memberId, tag (nullable), veranstaltungId (nullable — send null to unlink) |
-| DELETE | `/finance/transactions/:id` | 5 | Only if no reversals; recomputes Mitgliedsbeitrag if applicable |
+| GET | `/finance/transactions` | 3 | All; optional `?businessYearId=&categoryId=&memberId=&type=` |
+| GET | `/finance/transactions/balance/:businessYearId` | 3 | Running balance array (uses live carryOver) |
+| GET | `/finance/transactions/:id` | 3 | Single transaction incl. category, businessYear, member, reversals |
+| POST | `/finance/transactions` | 4 | Create with validation; updates Mitgliedsbeitrag if applicable; optional `tag: ONLINE\|BAR` |
+| PATCH | `/finance/transactions/:id` | 4 | date, description, categoryId, memberId, tag (nullable), veranstaltungId (nullable — send null to unlink) |
+| DELETE | `/finance/transactions/:id` | 4 | Only if no reversals; recomputes Mitgliedsbeitrag if applicable |
 
 ### Finance — Mitgliedsbeiträge
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/finance/mitgliedsbeitraege` | 0 | All; optional `?businessYearId=&memberId=&status=` |
-| GET | `/finance/mitgliedsbeitraege/:id` | 0 | Single record incl. member, businessYear |
-| PATCH | `/finance/mitgliedsbeitraege/:id` | 5 | Manual correction of bezahltJL / bezahltKG; status auto-recomputed |
+| GET | `/finance/mitgliedsbeitraege` | 3 | All; optional `?businessYearId=&memberId=&status=` |
+| GET | `/finance/mitgliedsbeitraege/:id` | 3 | Single record incl. member, businessYear |
+| PATCH | `/finance/mitgliedsbeitraege/:id` | 4 | Manual correction of bezahltJL / bezahltKG; status auto-recomputed |
 | POST | `/finance/mitgliedsbeitraege/generate` | 5 | One-time backfill: upsert Beiträge für alle aktiven Mitglieder × alle Geschäftsjahre |
 
 ### Finance — Transaction Attachments
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/finance/transactions/:id/attachments` | 0 | List attachments for transaction |
-| POST | `/finance/transactions/:id/attachments` | 5 | Upload file (multipart/form-data, field name `file`) |
-| GET | `/finance/transactions/:id/attachments/:aid/download` | 0 | Download file with original filename |
-| DELETE | `/finance/transactions/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
+| GET | `/finance/transactions/:id/attachments` | 3 | List attachments for transaction |
+| POST | `/finance/transactions/:id/attachments` | 4 | Upload file (multipart/form-data, field name `file`) |
+| GET | `/finance/transactions/:id/attachments/:aid/download` | 3 | Download file with original filename |
+| DELETE | `/finance/transactions/:id/attachments/:aid` | 4 | Delete DB record + file from disk |
 
 ### Veranstaltungen
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
 | GET | `/veranstaltungen` | 0 | All events; includes `_count` for transactions and attachments, `kategorien[]` |
-| POST | `/veranstaltungen` | 5 | Create; body: `name`, `date` (ISO string), `description?`, `kategorieIds?: number[]`; auto-creates `VeranstaltungForm` from current template snapshot |
+| POST | `/veranstaltungen` | 2 | Create; body: `name`, `date` (ISO string), `description?`, `kategorieIds?: number[]`; auto-creates `VeranstaltungForm` from current template snapshot |
 | GET | `/veranstaltungen/:id` | 0 | Single event incl. transactions (with category + member), attachments, form with rows, `kategorien[]` |
-| PATCH | `/veranstaltungen/:id` | 5 | Update `name`, `date`, `description`, `kategorieIds?: number[]` (full replace of category set) |
-| DELETE | `/veranstaltungen/:id` | 5 | Delete event + cascade (form, rows, attachments); also deletes attachment files from disk |
+| PATCH | `/veranstaltungen/:id` | 2 | Update `name`, `date`, `description`, `kategorieIds?: number[]` (full replace of category set) |
+| DELETE | `/veranstaltungen/:id` | 2 | Delete event + cascade (form, rows, attachments); also deletes attachment files from disk |
 | GET | `/veranstaltungen/:id/financials` | 0 | `{ einnahmen, ausgaben, saldo }` — computed live from linked transactions; RUECKBUCHUNG direction resolved via related transaction type |
 | GET | `/veranstaltungen/:id/all-attachments` | 0 | `{ direct: VeranstaltungAttachment[], fromTransactions: TransactionAttachment[] }` — all attachments reachable under this event |
 | GET | `/veranstaltungen/:id/attachments` | 0 | Direct attachments only |
-| POST | `/veranstaltungen/:id/attachments` | 5 | Upload direct attachment (multipart/form-data, field `file`); all mimetypes, max 50 MB |
+| POST | `/veranstaltungen/:id/attachments` | 2 | Upload direct attachment (multipart/form-data, field `file`); all mimetypes, max 50 MB |
 | GET | `/veranstaltungen/:id/attachments/:aid/download` | 0 | Download with `Content-Disposition: attachment` |
-| DELETE | `/veranstaltungen/:id/attachments/:aid` | 5 | Delete DB record + file from disk |
+| DELETE | `/veranstaltungen/:id/attachments/:aid` | 2 | Delete DB record + file from disk |
 | GET | `/veranstaltungen/:id/form` | 0 | Form columns snapshot + all rows ordered by `rowIndex` |
-| POST | `/veranstaltungen/:id/form/rows` | 5 | Add row; body: `cells?: { [colId]: value }`, `rowIndex?` (auto-appended if omitted) |
-| PATCH | `/veranstaltungen/:id/form/rows/:rowId` | 5 | Update `cells` and/or `rowIndex` |
-| DELETE | `/veranstaltungen/:id/form/rows/:rowId` | 5 | Delete row |
+| POST | `/veranstaltungen/:id/form/rows` | 2 | Add row; body: `cells?: { [colId]: value }`, `rowIndex?` (auto-appended if omitted) |
+| PATCH | `/veranstaltungen/:id/form/rows/:rowId` | 2 | Update `cells` and/or `rowIndex` |
+| DELETE | `/veranstaltungen/:id/form/rows/:rowId` | 2 | Delete row |
 | GET | `/veranstaltungen/ical` | **public** | iCal-Feed aller Veranstaltungen (kein JWT erforderlich) |
 
 ### Veranstaltung Form Template
@@ -500,11 +501,11 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 |--------|-------|-------------|-------------|
 | GET | `/files` | 0 | All files; optional `?path=` to filter by folder |
 | GET | `/files/folders` | 0 | List distinct folder paths |
-| POST | `/files/upload` | 5 | Upload file (multipart/form-data, field `file`); body fields: `path?` (folder), `description?` |
+| POST | `/files/upload` | 0 | Upload file (multipart/form-data, field `file`); body fields: `path?` (folder), `description?` |
 | GET | `/files/:id/download` | 0 | Download with `Content-Disposition: attachment` |
 | GET | `/files/:id/preview` | 0 | Inline view with `Content-Disposition: inline` (PDF/image) |
-| PATCH | `/files/:id` | 5 | Update `description` and/or `path` |
-| DELETE | `/files/:id` | 5 | Delete DB record + file from disk |
+| PATCH | `/files/:id` | 0 | Update `description` and/or `path` |
+| DELETE | `/files/:id` | 0 | Delete DB record + file from disk |
 
 ### Veranstaltung-Kategorien
 
@@ -512,9 +513,9 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 |--------|-------|-------------|-------------|
 | GET | `/veranstaltung-kategorien` | 0 | All categories incl. `_count.veranstaltungen` |
 | GET | `/veranstaltung-kategorien/:id` | 0 | Single category |
-| POST | `/veranstaltung-kategorien` | 5 | Create; `name` (unique), `description?`, `color?` |
-| PATCH | `/veranstaltung-kategorien/:id` | 5 | Update any field |
-| DELETE | `/veranstaltung-kategorien/:id` | 5 | Blocked if any events use this category |
+| POST | `/veranstaltung-kategorien` | 2 | Create; `name` (unique), `description?`, `color?` |
+| PATCH | `/veranstaltung-kategorien/:id` | 2 | Update any field |
+| DELETE | `/veranstaltung-kategorien/:id` | 2 | Blocked if any events use this category |
 
 ### Strafenkatalog
 
@@ -522,20 +523,22 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 |--------|-------|-------------|-------------|
 | GET | `/strafen` | 0 | All catalog entries incl. `_count.eintraege` |
 | GET | `/strafen/:id` | 0 | Single catalog entry |
-| POST | `/strafen` | 5 | Create; `name` (unique), `betrag`, `beschreibung?` |
-| PATCH | `/strafen/:id` | 5 | Update any field |
+| POST | `/strafen` | 0* | Create; `name` (unique), `betrag`, `beschreibung?`; *runtime check: L1 oder L3+ |
+| PATCH | `/strafen/:id` | 0* | Update any field; *runtime check: L1 oder L3+ |
 | DELETE | `/strafen/:id` | 5 | Blocked if any `StrafeEintrag` records exist for this type |
 
 ### Strafen — Einträge
 
 | Method | Route | AccessLevel | Description |
 |--------|-------|-------------|-------------|
-| GET | `/strafen/eintraege` | 0 | All entries; optional `?memberId=&strafeId=&businessYearId=&bezahlt=` |
-| GET | `/strafen/eintraege/summary` | 0 | Aggregiert nach Member × Geschäftsjahr; optional `?memberId=&businessYearId=`; returns `anzahlGesamt`, `anzahlBezahlt`, `anzahlOffen`, `gesamtbetrag`, `bezahltBetrag`, `offenBetrag` |
-| GET | `/strafen/eintraege/:id` | 0 | Single entry incl. member, strafe, businessYear |
-| POST | `/strafen/eintraege` | 5 | Assign penalty; body: `memberId`, `strafeId`, `businessYearId`, `grund?` |
-| PATCH | `/strafen/eintraege/:id` | 5 | Update `bezahlt` and/or `grund` |
-| DELETE | `/strafen/eintraege/:id` | 5 | Delete entry |
+| GET | `/strafen/eintraege` | 0 | L0/L2: only own entries; L1/L3+: all; optional `?memberId=&strafeId=&businessYearId=&bezahlt=` |
+| GET | `/strafen/eintraege/summary` | 0 | L0/L2: own summary only; L1/L3+: all; optional `?memberId=&businessYearId=` |
+| GET | `/strafen/eintraege/:id` | 0 | Single entry; L0/L2 can only fetch own entries |
+| POST | `/strafen/eintraege` | 0* | Assign penalty; *runtime check: L1 oder L3+ |
+| PATCH | `/strafen/eintraege/:id` | 0* | Update `grund` (L1, L3+) and/or `bezahlt` (L1, L4+ only) |
+| POST | `/strafen/eintraege/:id/bezahlen` | 0* | Mark bezahlt with datum+tag; *runtime check: L1 oder L4+ |
+| POST | `/strafen/eintraege/:id/stornieren` | 0* | Reverse payment; *runtime check: L1 oder L4+ |
+| DELETE | `/strafen/eintraege/:id` | 0* | Delete entry; *runtime check: L1 oder L3+ |
 
 ## iCal-Feed (`GET /veranstaltungen/ical`)
 

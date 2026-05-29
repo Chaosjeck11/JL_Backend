@@ -63,8 +63,9 @@ export class StrafenController {
   }
 
   @Post()
-  @AccessLevel(5)
-  createKatalog(@Body() dto: CreateStrafeDto) {
+  @AccessLevel(0)
+  createKatalog(@Req() req: Request, @Body() dto: CreateStrafeDto) {
+    if (!canWriteStrafen(userLevel(req))) throw new ForbiddenException("Insufficient permissions");
     return this.service.createKatalog(dto);
   }
 
@@ -75,18 +76,21 @@ export class StrafenController {
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(0)
   updateKatalog(
+    @Req() req: Request,
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateStrafeDto,
   ) {
+    if (!canWriteStrafen(userLevel(req))) throw new ForbiddenException("Insufficient permissions");
     return this.service.updateKatalog(id, dto);
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(0)
   @HttpCode(HttpStatus.NO_CONTENT)
-  removeKatalog(@Param("id", ParseIntPipe) id: number) {
+  removeKatalog(@Req() req: Request, @Param("id", ParseIntPipe) id: number) {
+    if (!canWriteStrafen(userLevel(req))) throw new ForbiddenException("Insufficient permissions");
     return this.service.removeKatalog(id);
   }
 }

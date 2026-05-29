@@ -36,13 +36,13 @@ export class BusinessYearController {
   }
 
   @Post()
-  @AccessLevel(5)
+  @AccessLevel(4)
   create(@Body() dto: CreateBusinessYearDto) {
     return this.businessYearService.create(dto);
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateBusinessYearDto,
@@ -51,7 +51,7 @@ export class BusinessYearController {
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(4)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.businessYearService.remove(id);

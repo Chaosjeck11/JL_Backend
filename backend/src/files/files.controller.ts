@@ -43,7 +43,7 @@ export class FilesController {
   }
 
   @Post("upload")
-  @AccessLevel(5)
+  @AccessLevel(0)
   @UseInterceptors(FileInterceptor("file"))
   upload(
     @UploadedFile() file: Express.Multer.File,
@@ -87,7 +87,7 @@ export class FilesController {
   }
 
   @Patch(":id")
-  @AccessLevel(5)
+  @AccessLevel(0)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateFileDto,
@@ -96,7 +96,7 @@ export class FilesController {
   }
 
   @Delete(":id")
-  @AccessLevel(5)
+  @AccessLevel(0)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.filesService.remove(id);
