@@ -3,13 +3,10 @@ import {
   Get,
   Query,
   Res,
-  UseGuards,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
 import { Response } from "express";
 import { UpdateService } from "./update.service";
 
-@UseGuards(AuthGuard("jwt"))
 @Controller("update")
 export class UpdateController {
   constructor(private readonly updateService: UpdateService) {}
