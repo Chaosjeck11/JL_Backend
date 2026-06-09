@@ -28,9 +28,12 @@ services:
       - db
     networks:
       - jl-net
+      - web
     ports:
       - "3000:3000"
 
 networks:
   jl-net:
     driver: bridge
+  web:
+    external: true
