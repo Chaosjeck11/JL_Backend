@@ -27,6 +27,8 @@ import { AccessLevelGuard } from "../../auth/access-level.guard";
 const ATTACHMENT_DIR = path.join(process.cwd(), "uploads", "member-attachments");
 fs.mkdirSync(ATTACHMENT_DIR, { recursive: true });
 
+const BLOCKED_EXTENSIONS = [".exe", ".sh", ".bat", ".cmd", ".com", ".ps1", ".dll", ".vbs", ".msi"];
+
 const multerOptions = {
   storage: diskStorage({
     destination: ATTACHMENT_DIR,
@@ -35,6 +37,14 @@ const multerOptions = {
       cb(null, `${randomUUID()}${ext}`);
     },
   }),
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (BLOCKED_EXTENSIONS.includes(ext)) {
+      cb(new Error("File type not allowed"), false);
+    } else {
+      cb(null, true);
+    }
+  },
   limits: { fileSize: 50 * 1024 * 1024 },
 };
 
@@ -69,7 +79,7 @@ export class MemberAttachmentController {
   ) {
     const attachment = await this.attachmentService.findOne(memberId, attachmentId);
     const filePath = path.join(ATTACHMENT_DIR, attachment.storedName);
-    res.setHeader("Content-Disposition", `attachment; filename="${attachment.filename}"`);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`);
     res.setHeader("Content-Type", attachment.mimeType);
     res.sendFile(filePath);
   }

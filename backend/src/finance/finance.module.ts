@@ -30,6 +30,16 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
           cb(null, `${randomUUID()}${ext}`);
         },
       }),
+      fileFilter: (_req, file, cb) => {
+        const blocked = [".exe", ".sh", ".bat", ".cmd", ".com", ".ps1", ".dll", ".vbs", ".js", ".msi"];
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (blocked.includes(ext)) {
+          cb(new Error("File type not allowed"), false);
+        } else {
+          cb(null, true);
+        }
+      },
+      limits: { fileSize: 50 * 1024 * 1024 },
     }),
   ],
   controllers: [

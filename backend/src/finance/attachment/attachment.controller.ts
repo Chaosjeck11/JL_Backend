@@ -62,7 +62,7 @@ export class AttachmentController {
     );
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${attachment.filename}"`,
+      `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
     );
     res.setHeader("Content-Type", attachment.mimeType);
     res.sendFile(filePath);

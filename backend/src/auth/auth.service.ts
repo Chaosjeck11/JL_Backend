@@ -16,7 +16,7 @@ export class AuthService {
       include: { role: true },
     });
 
-    if (!member) {
+    if (!member || !member.active) {
       throw new UnauthorizedException("Invalid credentials");
     }
 

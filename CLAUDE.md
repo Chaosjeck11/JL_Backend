@@ -641,3 +641,14 @@ Idempotent — safe to run multiple times. Each section uses `upsert` or `findFi
 5. Members — TODO, pending full member list
 
 **CORS:** Origins are configured via the `CORS_ORIGINS` env var (comma-separated). Falls back to `http://localhost:5173` for local dev.
+
+**Security measures in place:**
+- `helmet` middleware sets HTTP security headers on every response (CSP, X-Frame-Options, HSTS, etc.)
+- `@nestjs/throttler` rate-limits all routes (20 req/min globally); `POST /auth/login` additionally limited to 10 req/min
+- Inactive members (`active: false`) are rejected at login
+- `JWT_SECRET` validated at startup — app refuses to start if not set or < 32 chars
+- JWT payload shape validated (sub, accessLevel, email types checked)
+- `roleId` changes in `PATCH /members/:id` restricted to L5 (Admin)
+- All file upload endpoints block dangerous executable extensions (`.exe`, `.sh`, `.bat`, `.cmd`, `.com`, `.ps1`, `.dll`, `.vbs`, `.msi`)
+- `Content-Disposition` filenames use RFC 5987 `filename*=UTF-8''...` encoding — no header injection possible
+- `uploads/` excluded from git via `.gitignore`

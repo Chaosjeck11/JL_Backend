@@ -65,6 +65,8 @@ export class VeranstaltungenICalController {
   }
 }
 
+const BLOCKED_EXTENSIONS = [".exe", ".sh", ".bat", ".cmd", ".com", ".ps1", ".dll", ".vbs", ".msi"];
+
 const multerOptions = {
   storage: diskStorage({
     destination: VERANSTALTUNG_ATTACHMENT_DIR,
@@ -73,6 +75,14 @@ const multerOptions = {
       cb(null, `${randomUUID()}${ext}`);
     },
   }),
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (BLOCKED_EXTENSIONS.includes(ext)) {
+      cb(new Error("File type not allowed"), false);
+    } else {
+      cb(null, true);
+    }
+  },
   limits: { fileSize: 50 * 1024 * 1024 },
 };
 
@@ -161,7 +171,7 @@ export class VeranstaltungenController {
   ) {
     const a = await this.service.findAttachment(id, aid);
     const filePath = path.join(VERANSTALTUNG_ATTACHMENT_DIR, a.storedName);
-    res.setHeader("Content-Disposition", `attachment; filename="${a.filename}"`);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(a.filename)}`);
     res.setHeader("Content-Type", a.mimeType);
     res.sendFile(filePath);
   }

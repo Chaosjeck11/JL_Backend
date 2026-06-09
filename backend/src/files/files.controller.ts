@@ -65,7 +65,7 @@ export class FilesController {
     const { file, filePath } = await this.filesService.resolveFilePath(id);
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${file.filename}"`,
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
     );
     res.setHeader("Content-Type", file.mimeType);
     res.sendFile(filePath);
@@ -80,7 +80,7 @@ export class FilesController {
     const { file, filePath } = await this.filesService.resolveFilePath(id);
     res.setHeader(
       "Content-Disposition",
-      `inline; filename="${file.filename}"`,
+      `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
     );
     res.setHeader("Content-Type", file.mimeType);
     res.sendFile(filePath);
