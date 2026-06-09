@@ -12,6 +12,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    if (
+      typeof payload?.sub !== "number" ||
+      typeof payload?.accessLevel !== "number" ||
+      typeof payload?.email !== "string"
+    ) {
+      throw new Error("Invalid JWT payload");
+    }
     return payload;
   }
 }

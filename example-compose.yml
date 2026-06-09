@@ -4,9 +4,9 @@ services:
     container_name: jl-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: jl_db
-      POSTGRES_USER: jl_user
-      POSTGRES_PASSWORD: jl_password
+      POSTGRES_DB: ${POSTGRES_DB:-jl_db}
+      POSTGRES_USER: ${POSTGRES_USER:-jl_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     networks:

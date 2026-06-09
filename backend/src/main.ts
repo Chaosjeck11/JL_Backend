@@ -4,17 +4,12 @@ import { AppModule } from "./app.module";
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  const corsOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
+    : ["http://localhost:5173", "http://127.0.0.1:5173"];
+
   app.enableCors({
-    origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "https://jl_manage.ct-2514.de",
-      "tauri://localhost",
-      "https://tauri.localhost",
-      "http://localhost:1420",
-      "http://tauri.localhost",
-      "https://jl.ct-2514.de",
-    ],
+    origin: corsOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
