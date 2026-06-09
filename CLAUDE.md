@@ -27,11 +27,8 @@ Start the PostgreSQL database (required for local dev):
 docker compose up db -d
 ```
 
-The backend requires a `.env` file in `backend/` with at least:
-```
-DATABASE_URL=postgresql://jl_user:jl_password@localhost:5432/jl_db
-JWT_SECRET=<secret>
-```
+The backend requires a `.env` file in `backend/` — copy `backend/.env.example` and fill in the values.
+Required variables: `DATABASE_URL`, `JWT_SECRET` (min 32 chars), `ADMIN_SEED_PASSWORD`, `CORS_ORIGINS`.
 
 **Docker-Hinweis:** Der Container (`jl-backend-t`) enthält eine eigenständige Kopie des Quellcodes — kein Volume-Mount. Nach Code-Änderungen auf dem Host müssen Dateien explizit kopiert werden. **Container-Updates führt ausschließlich der User durch** — Claude gibt nur die nötigen Befehle an:
 ```bash
@@ -638,9 +635,9 @@ oder Downgrade auf v8 (rein CJS).
 
 Idempotent — safe to run multiple times. Each section uses `upsert` or `findFirst`-guard:
 1. Roles — upsert "Mitglied" (`accessLevel: 0`) and "Admin" (`accessLevel: 5`)
-2. Admin member — upsert `admin@jl.local` with role "Admin" (password: `admin123`)
+2. Admin member — upsert `admin@jl.local` with role "Admin" (password read from `ADMIN_SEED_PASSWORD` env var — required)
 3. Default categories — upsert by `name`; sets `isMitgliedsbeitrag: true` on "Mitgliedsbeitrag"
 4. BusinessYears — creates all years from 2023 to current year if missing; generates Mitgliedsbeitrag records for active members
 5. Members — TODO, pending full member list
 
-**CORS:** Configured for `http://localhost:5173` and `http://127.0.0.1:5173` (Vite frontend).
+**CORS:** Origins are configured via the `CORS_ORIGINS` env var (comma-separated). Falls back to `http://localhost:5173` for local dev.

@@ -63,13 +63,18 @@ export class MembersController {
     return this.members.create(dto);
   }
 
-  // Edit general fields: Vorstand (L3) and above
+  // Edit general fields: Vorstand (L3) and above; roleId change requires Admin (L5)
   @Patch(":id")
   @AccessLevel(3)
   update(
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateMemberDto,
+    @Req() req: Request,
   ) {
+    const level = (req.user as any).accessLevel as number;
+    if (dto.roleId !== undefined && level < 5) {
+      throw new ForbiddenException("Only admins can change a member's role");
+    }
     return this.members.update(id, dto);
   }
 

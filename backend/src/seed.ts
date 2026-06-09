@@ -129,7 +129,13 @@ async function seedAdminUser() {
     create: { name: "Admin", description: "Systemadministrator", accessLevel: 5 },
   });
 
-  const passwordHash = await bcrypt.hash("admin123", 10);
+  const adminPassword = process.env.ADMIN_SEED_PASSWORD;
+  if (!adminPassword) {
+    throw new Error(
+      "ADMIN_SEED_PASSWORD environment variable is not set. Set it before running the seeder.",
+    );
+  }
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   await prisma.member.upsert({
     where: { email: "admin@jl.local" },
