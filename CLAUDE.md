@@ -59,6 +59,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 - `VeranstaltungenModule` — Veranstaltungsverwaltung at routes `/veranstaltungen` and `/veranstaltung-form-template`. Three controllers in one module: `VeranstaltungenICalController` (public iCal feed, no guards), `VeranstaltungenController` (CRUD, attachments, form rows, financials, all-attachments), and `FormTemplateController` (global template GET/PATCH). Files at `uploads/veranstaltung-attachments/`, all mimetypes, max 50 MB.
 - `VeranstaltungKategorienModule` — CRUD for `VeranstaltungKategorie` records at route `/veranstaltung-kategorien`. Many-to-many relation to `Veranstaltung`. Fields: `name` (unique), `description?`, `color?`. Delete blocked if category is used by any event.
 - `StrafenModule` — Strafenkatalog und Strafenverfolgung unter `/strafen` und `/strafen/eintraege`. Zwei Controller in einem Modul: `StrafeEintraegeController` (Einträge + Summary, registriert zuerst damit `/eintraege` vor `/:id` aufgelöst wird) und `StrafenController` (Katalog-CRUD). Keine Dateiuploads.
+- `UpdateModule` — App-Update-Checker und Download-Endpunkt unter `/update`. **Vollständig öffentlich (kein JWT erforderlich)** — damit die Versionsprüfung bereits auf dem Login-Screen der Desktop-App funktioniert. Builds werden aus dem `Builds/`-Verzeichnis (neben `backend/`) gelesen; Struktur: `Builds/<semver>/<platform>/<datei>`.
 
 **Authorization flow:**
 
@@ -642,13 +643,18 @@ Idempotent — safe to run multiple times. Each section uses `upsert` or `findFi
 
 **CORS:** Origins are configured via the `CORS_ORIGINS` env var (comma-separated). Falls back to `http://localhost:5173` for local dev.
 
+**Public routes (no JWT required):**
+- `GET /veranstaltungen/ical` — iCal-Feed (calendar clients fetch server-side, no auth possible)
+- `GET /update/check` — version check for desktop app login screen
+- `GET /update/download` — binary download for auto-updater
+
 **Security measures in place:**
 - `helmet` middleware sets HTTP security headers on every response (CSP, X-Frame-Options, HSTS, etc.)
 - `@nestjs/throttler` rate-limits all routes (20 req/min globally); `POST /auth/login` additionally limited to 10 req/min
-- Inactive members (`active: false`) are rejected at login
+- Inactive members (`active: false`) are rejected at login — cannot obtain a JWT
 - `JWT_SECRET` validated at startup — app refuses to start if not set or < 32 chars
-- JWT payload shape validated (sub, accessLevel, email types checked)
-- `roleId` changes in `PATCH /members/:id` restricted to L5 (Admin)
-- All file upload endpoints block dangerous executable extensions (`.exe`, `.sh`, `.bat`, `.cmd`, `.com`, `.ps1`, `.dll`, `.vbs`, `.msi`)
-- `Content-Disposition` filenames use RFC 5987 `filename*=UTF-8''...` encoding — no header injection possible
+- JWT payload shape validated (`sub`, `accessLevel`, `email` types checked in `JwtStrategy.validate`)
+- `roleId` changes in `PATCH /members/:id` restricted to L5 (Admin) — prevents privilege escalation
+- All file upload endpoints block dangerous executable extensions (`.exe`, `.sh`, `.bat`, `.cmd`, `.com`, `.ps1`, `.dll`, `.vbs`, `.msi`) via Multer `fileFilter`; size limit 50 MB on all endpoints
+- `Content-Disposition` filenames use RFC 5987 `filename*=UTF-8''...` encoding — prevents HTTP header injection
 - `uploads/` excluded from git via `.gitignore`

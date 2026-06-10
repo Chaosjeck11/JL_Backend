@@ -445,10 +445,12 @@ Allgemeiner Dateimanager für beliebige Vereinsdokumente.
 
 ### Update (Desktop-App)
 
-| Methode | Route | Level | Beschreibung |
+**Öffentlich — kein JWT erforderlich.** Damit die Versionsprüfung bereits auf dem Login-Screen der Desktop-App sichtbar ist.
+
+| Methode | Route | Auth | Beschreibung |
 |---|---|---|---|
-| GET | `/update/check` | 0 | Prüfen ob neue Version verfügbar. Query: `?version=1.0.0&platform=linux\|windows\|android`. |
-| GET | `/update/download` | 0 | Neueste Version herunterladen. Query: `?platform=linux\|windows\|android`. |
+| GET | `/update/check` | — | Prüfen ob neue Version verfügbar. Query: `?version=1.0.0&platform=linux\|windows\|android`. |
+| GET | `/update/download` | — | Neueste Version herunterladen. Query: `?platform=linux\|windows\|android`. |
 
 Builds werden aus dem `Builds/`-Verzeichnis (neben `backend/`) gelesen. Struktur: `Builds/<semver>/<platform>/<datei>`.
 
