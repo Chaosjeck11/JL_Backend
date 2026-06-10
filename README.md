@@ -214,6 +214,7 @@ Vorlage: `.env.example`.
 | `JWT_SECRET` | ✅ | — | Mindestens 32 Zeichen, zufällig generiert |
 | `ADMIN_SEED_PASSWORD` | ✅* | — | Passwort für `admin@jl.local` — nur beim Seeding nötig |
 | `CORS_ORIGINS` | — | `http://localhost:5173` | Kommagetrennte erlaubte Frontend-Origins |
+| `BIERLISTE_ADMIN_MIN_LEVEL` | — | `3` | Ab welchem JL-AccessLevel ein Member als Bierliste-Admin gilt (Schreib-/Verwaltungszugriff). Werte: 0–5. |
 
 > `*` Nach dem ersten Seeding optional.
 
@@ -453,6 +454,61 @@ Allgemeiner Dateimanager für beliebige Vereinsdokumente.
 | GET | `/update/download` | — | Neueste Version herunterladen. Query: `?platform=linux\|windows\|android`. |
 
 Builds werden aus dem `Builds/`-Verzeichnis (neben `backend/`) gelesen. Struktur: `Builds/<semver>/<platform>/<datei>`.
+
+---
+
+### Bierliste
+
+Getränkeverwaltung und Schuldenbuch für den Vereinskühlschrank. Verwendet dieselben JL-Member-Accounts; eigene Kasse vollständig getrennt von der JL-Finance-Kasse.
+
+**Auth:** JL-JWT. Wer als „Bierliste-Admin" gilt, ist per `BIERLISTE_ADMIN_MIN_LEVEL` konfigurierbar (Standard: L3 = Vorstand+). L0–L2 können lesen und eigenen Konsum buchen; schreibende Admin-Aktionen (Getränke verwalten, Kasse, Abrechnungen) erfordern mindestens den konfigurierten Level.
+
+#### Bierliste — Getränke
+
+| Methode | Route | Admin? | Beschreibung |
+|---|---|---|---|
+| GET | `/bierliste/drinks` | — | Alle aktiven Getränke inkl. Kühlschrankstand. Query: `?includeInactive=true` (nur für Admins wirksam). |
+| GET | `/bierliste/drinks/:id` | — | Einzelnes Getränk. |
+| POST | `/bierliste/drinks` | ✅ | Getränk anlegen. Erstellt automatisch einen Kühlschrankeintrag mit `stock=0`. Body: `name`, `pricePerUnit`, `description?`, `category?`, `sortOrder?`, `active?`. |
+| PATCH | `/bierliste/drinks/:id` | ✅ | Felder aktualisieren. |
+| DELETE | `/bierliste/drinks/:id` | ✅ | Getränk löschen (inkl. Bilddatei). |
+| POST | `/bierliste/drinks/:id/image` | ✅ | Bild hochladen (`multipart/form-data`, Feld `file`). Nur Bilder (JPEG/PNG/WebP/GIF), max. 5 MB. Altes Bild wird überschrieben. |
+
+#### Bierliste — Kühlschrank
+
+| Methode | Route | Admin? | Beschreibung |
+|---|---|---|---|
+| GET | `/bierliste/fridge` | — | Alle Kühlschrankeinträge inkl. Getränkedetails, sortiert nach `sortOrder`. |
+| PATCH | `/bierliste/fridge/:drinkId` | ✅ | Bestand aktualisieren. Body: `mode` (`set` / `add` / `subtract`), `value`. Optional: `minStock`, `maxStock`, `location`. Bestand unterschreitet nie 0. |
+
+#### Bierliste — Konsum
+
+| Methode | Route | Admin? | Beschreibung |
+|---|---|---|---|
+| GET | `/bierliste/consumption/me` | — | Eigene Verbrauchshistorie (letzte 50 Einträge). |
+| POST | `/bierliste/consumption` | — | Konsum buchen. Body: `drinkId`, `amount` (positiv = Verbrauch, negativ = Korrektur/Stornierung, nicht 0), `note?`. Aktualisiert automatisch `openAmount` des Mitglieds. |
+
+#### Bierliste — Mitglieder & Salden
+
+| Methode | Route | Admin? | Beschreibung |
+|---|---|---|---|
+| GET | `/bierliste/members/balance` | ✅ | Alle Mitgliedssalden (`openAmount` / `paidAmount`), absteigende Sortierung nach offenen Beträgen. |
+| GET | `/bierliste/members/balance/me` | — | Eigener Saldo. |
+| PATCH | `/bierliste/members/:id/pay` | ✅ | Zahlung verbuchen. Body: `amount`. Verschiebt den Betrag von `openAmount` → `paidAmount`, legt automatisch eine Kassenbuchung `IN` an. Zahlung wird auf offenen Betrag gedeckelt. |
+| PATCH | `/bierliste/members/:id/amounts` | ✅ | Salden direkt korrigieren. Body: `openAmount?`, `paidAmount?`. |
+
+#### Bierliste — Kasse
+
+| Methode | Route | Admin? | Beschreibung |
+|---|---|---|---|
+| GET | `/bierliste/cashbox` | ✅ | Kassenstand (live berechnet) + vollständige Transaktionshistorie inkl. Mitgliedsreferenzen. |
+| POST | `/bierliste/cashbox` | ✅ | Kassenbuchung anlegen. Body: `amount`, `direction` (`IN` / `OUT` / `CORRECTION`), `reason?`, `paymentType?`, `userIdPaid?`. |
+
+#### Bierliste — Statistiken
+
+| Methode | Route | Admin? | Beschreibung |
+|---|---|---|---|
+| GET | `/bierliste/stats/users` | ✅ | Verbrauch je Mitglied: Gesamtmenge, Gesamtkosten, `openAmount`, `paidAmount`, Aufschlüsselung nach Getränk. |
 
 ---
 
