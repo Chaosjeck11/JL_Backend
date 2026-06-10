@@ -41,6 +41,11 @@ model Member {
   files              File[]
   attachments        MemberAttachment[]
   strafen            StrafeEintrag[]
+
+  bierConsumptions        BierConsumption[]
+  bierCashboxCreated      BierCashboxTransaction[] @relation("BierCashboxCreatedBy")
+  bierCashboxPaid         BierCashboxTransaction[] @relation("BierCashboxPaidMember")
+  bierBalance             BierMemberBalance?
 }
 
 model MemberAttachment {
@@ -257,4 +262,72 @@ model Mitgliedsbeitrag {
   businessYear BusinessYear @relation(fields: [businessYearId], references: [id])
 
   @@unique([memberId, businessYearId])
+}
+
+// ── Bierliste module ──────────────────────────────────────────────────────────
+
+model BierDrink {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  pricePerUnit Float
+  description  String?
+  category     String?
+  imagePath    String?
+  sortOrder    Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  fridge       BierFridge?
+  consumptions BierConsumption[]
+}
+
+model BierFridge {
+  drinkId   Int       @id
+  drink     BierDrink @relation(fields: [drinkId], references: [id], onDelete: Cascade)
+  stock     Int       @default(0)
+  minStock  Int?
+  maxStock  Int?
+  location  String?
+  updatedAt DateTime  @updatedAt
+}
+
+model BierConsumption {
+  id        Int       @id @default(autoincrement())
+  memberId  Int
+  drinkId   Int
+  amount    Int
+  note      String?
+  createdAt DateTime  @default(now())
+
+  member Member    @relation(fields: [memberId], references: [id])
+  drink  BierDrink @relation(fields: [drinkId], references: [id])
+}
+
+enum BierCashboxDirection {
+  IN
+  OUT
+  CORRECTION
+}
+
+model BierCashboxTransaction {
+  id          Int                  @id @default(autoincrement())
+  amount      Float
+  direction   BierCashboxDirection
+  reason      String?
+  paymentType String?
+  createdById Int?
+  userIdPaid  Int?
+  createdAt   DateTime             @default(now())
+
+  createdBy  Member? @relation("BierCashboxCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  paidMember Member? @relation("BierCashboxPaidMember", fields: [userIdPaid], references: [id], onDelete: SetNull)
+}
+
+model BierMemberBalance {
+  memberId   Int    @id
+  openAmount Float  @default(0)
+  paidAmount Float  @default(0)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 }

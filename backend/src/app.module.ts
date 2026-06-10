@@ -10,6 +10,7 @@ import { VeranstaltungenModule } from "./veranstaltungen/veranstaltungen.module"
 import { VeranstaltungKategorienModule } from "./veranstaltung-kategorien/veranstaltung-kategorien.module";
 import { StrafenModule } from "./strafen/strafen.module";
 import { UpdateModule } from "./update/update.module";
+import { BierlisteModule } from "./bierliste/bierliste.module";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UpdateModule } from "./update/update.module";
     VeranstaltungKategorienModule,
     StrafenModule,
     UpdateModule,
+    BierlisteModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
