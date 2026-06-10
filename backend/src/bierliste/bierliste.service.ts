@@ -12,7 +12,6 @@ import { CreateConsumptionDto } from "./dto/create-consumption.dto";
 import { CreateCashboxTransactionDto } from "./dto/create-cashbox-transaction.dto";
 import * as path from "path";
 import * as fs from "fs";
-import { v4 as uuidv4 } from "uuid";
 
 @Injectable()
 export class BierlisteService {
@@ -77,7 +76,7 @@ export class BierlisteService {
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
     const ext = path.extname(file.originalname);
-    const storedName = `${uuidv4()}${ext}`;
+    const storedName = `${crypto.randomUUID()}${ext}`;
     const uploadDir = path.join(process.cwd(), "uploads", "bier-drinks");
     fs.mkdirSync(uploadDir, { recursive: true });
     fs.renameSync(file.path, path.join(uploadDir, storedName));
