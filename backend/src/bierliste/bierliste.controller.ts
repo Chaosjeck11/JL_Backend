@@ -166,9 +166,7 @@ export class BierMembersController {
 
   @Get("balance")
   @AccessLevel(0)
-  getAllBalances(@Req() req: any) {
-    if (!isBierAdmin(req.user.accessLevel))
-      throw new ForbiddenException("Bierliste Admin required");
+  getAllBalances() {
     return this.service.getAllBalances();
   }
 

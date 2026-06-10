@@ -128,7 +128,8 @@ Every protected route uses two guards applied together at the controller level:
 | create (inkl. Korrekturbuchungen) | W | W | W | W | W | W |
 | **Bierliste — Salden** | | | | | | |
 | read own | R | R | R | R | R | R |
-| read all / pay / adjust | — | — | — | W* | W* | W* |
+| read all | R | R | R | R | R | R |
+| pay / adjust | — | — | — | W* | W* | W* |
 | **Bierliste — Kasse** | | | | | | |
 | read / create | — | — | — | W* | W* | W* |
 | **Bierliste — Statistiken** | | | | | | |
@@ -583,7 +584,7 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| GET | `/bierliste/members/balance` | 0* | Alle Mitgliedssalden, absteigend nach `openAmount`. *runtime check: Bier-Admin. |
+| GET | `/bierliste/members/balance` | 0 | Alle Mitgliedssalden, absteigend nach `openAmount`. Für alle sichtbar. |
 | GET | `/bierliste/members/balance/me` | 0 | Eigener Saldo (`openAmount`, `paidAmount`). |
 | PATCH | `/bierliste/members/:id/pay` | 0* | Zahlung abrechnen. Body: `amount`. Verschiebt von `openAmount` → `paidAmount`, legt automatisch Cashbox-`IN`-Buchung an. Wird auf `openAmount` gedeckelt. *runtime check: Bier-Admin. |
 | PATCH | `/bierliste/members/:id/amounts` | 0* | Salden direkt korrigieren. Body: `openAmount?`, `paidAmount?`. *runtime check: Bier-Admin. |

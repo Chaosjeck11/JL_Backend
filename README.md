@@ -492,7 +492,7 @@ Getränkeverwaltung und Schuldenbuch für den Vereinskühlschrank. Verwendet die
 
 | Methode | Route | Admin? | Beschreibung |
 |---|---|---|---|
-| GET | `/bierliste/members/balance` | ✅ | Alle Mitgliedssalden (`openAmount` / `paidAmount`), absteigende Sortierung nach offenen Beträgen. |
+| GET | `/bierliste/members/balance` | — | Alle Mitgliedssalden (`openAmount` / `paidAmount`), absteigende Sortierung nach offenen Beträgen. Für alle Mitglieder sichtbar. |
 | GET | `/bierliste/members/balance/me` | — | Eigener Saldo. |
 | PATCH | `/bierliste/members/:id/pay` | ✅ | Zahlung verbuchen. Body: `amount`. Verschiebt den Betrag von `openAmount` → `paidAmount`, legt automatisch eine Kassenbuchung `IN` an. Zahlung wird auf offenen Betrag gedeckelt. |
 | PATCH | `/bierliste/members/:id/amounts` | ✅ | Salden direkt korrigieren. Body: `openAmount?`, `paidAmount?`. |
