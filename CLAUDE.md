@@ -60,6 +60,7 @@ docker exec jl-backend-t sh -c "cd /app && ./node_modules/.bin/prisma migrate de
 - `VeranstaltungKategorienModule` — CRUD for `VeranstaltungKategorie` records at route `/veranstaltung-kategorien`. Many-to-many relation to `Veranstaltung`. Fields: `name` (unique), `description?`, `color?`. Delete blocked if category is used by any event.
 - `StrafenModule` — Strafenkatalog und Strafenverfolgung unter `/strafen` und `/strafen/eintraege`. Zwei Controller in einem Modul: `StrafeEintraegeController` (Einträge + Summary, registriert zuerst damit `/eintraege` vor `/:id` aufgelöst wird) und `StrafenController` (Katalog-CRUD). Keine Dateiuploads.
 - `UpdateModule` — App-Update-Checker und Download-Endpunkt unter `/update`. **Vollständig öffentlich (kein JWT erforderlich)** — damit die Versionsprüfung bereits auf dem Login-Screen der Desktop-App funktioniert. Builds werden aus dem `Builds/`-Verzeichnis (neben `backend/`) gelesen; Struktur: `Builds/<semver>/<platform>/<datei>`.
+- `BierlisteModule` — Getränkeverwaltung und Schuldenbuch unter `/bierliste/*`. Sechs Controller-Klassen in einem Modul: `BierDrinksController`, `BierFridgeController`, `BierConsumptionController`, `BierMembersController`, `BierCashboxController`, `BierStatsController`. Nutzt dieselben JL-Member-Accounts; alle Bierliste-Tabellen sind vollständig getrennt von JL-Finance. Bilder in `uploads/bier-drinks/`. Admin-Threshold konfigurierbar per `BIERLISTE_ADMIN_MIN_LEVEL` (Standard: 3).
 
 **Authorization flow:**
 
@@ -119,6 +120,22 @@ Every protected route uses two guards applied together at the controller level:
 | PATCH (mark bezahlt) | — | — | — | — | W | W |
 | generate backfill | — | — | — | — | — | W |
 | **iCal Feed** | public | public | public | public | public | public |
+| **Bierliste — Getränke / Kühlschrank** | | | | | | |
+| read | R | R | R | R | R | R |
+| create / edit / delete / image | — | — | — | W* | W* | W* |
+| **Bierliste — Konsum** | | | | | | |
+| read own | R | R | R | R | R | R |
+| create (inkl. Korrekturbuchungen) | W | W | W | W | W | W |
+| **Bierliste — Salden** | | | | | | |
+| read own | R | R | R | R | R | R |
+| read all | R | R | R | R | R | R |
+| pay / adjust | — | — | — | W* | W* | W* |
+| **Bierliste — Kasse** | | | | | | |
+| read / create | — | — | — | W* | W* | W* |
+| **Bierliste — Statistiken** | | | | | | |
+| read | — | — | — | R* | R* | R* |
+
+\* Schwellenwert konfigurierbar per `BIERLISTE_ADMIN_MIN_LEVEL` (Standard: 3 = Vorstand+).
 
 **Non-linear logic** (cannot be expressed as simple `>=` threshold — implemented as runtime checks):
 - **Strafenkatalog write**: L1 (Strafenwart) und L3+ (Vorstand, Kassenwart, Admin) — nicht L2 (Orgateam). Gleiche Helper-Funktion `canWriteStrafen(level)` = `level === 1 || level >= 3`.
@@ -538,6 +555,57 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 | POST | `/strafen/eintraege/:id/stornieren` | 0* | Reverse payment; *runtime check: L1 oder L4+ |
 | DELETE | `/strafen/eintraege/:id` | 0* | Delete entry; *runtime check: L1 oder L3+ |
 
+### Bierliste — Getränke
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/bierliste/drinks` | 0 | Alle aktiven Getränke inkl. Kühlschrankstand. `?includeInactive=true` zeigt inaktive (nur für Bier-Admins wirksam). |
+| GET | `/bierliste/drinks/:id` | 0 | Einzelnes Getränk. |
+| POST | `/bierliste/drinks` | 0* | Getränk anlegen; *runtime check: Bier-Admin. Erstellt automatisch Kühlschrankeintrag mit `stock=0`. |
+| PATCH | `/bierliste/drinks/:id` | 0* | Felder aktualisieren; *runtime check: Bier-Admin. |
+| DELETE | `/bierliste/drinks/:id` | 0* | Getränk löschen inkl. Bilddatei; *runtime check: Bier-Admin. |
+| POST | `/bierliste/drinks/:id/image` | 0* | Bild hochladen (`multipart/form-data`, Feld `file`). JPEG/PNG/WebP/GIF, max. 5 MB. *runtime check: Bier-Admin. |
+
+### Bierliste — Kühlschrank
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/bierliste/fridge` | 0 | Alle Kühlschrankeinträge inkl. Getränkedetails, sortiert nach `sortOrder`. |
+| PATCH | `/bierliste/fridge/:drinkId` | 0* | Bestand aktualisieren. Body: `mode` (`set`/`add`/`subtract`), `value`. Optional: `minStock`, `maxStock`, `location`. Bestand ≥ 0. *runtime check: Bier-Admin. |
+
+### Bierliste — Konsum
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/bierliste/consumption/me` | 0 | Eigene Verbrauchshistorie (letzte 50 Einträge). |
+| POST | `/bierliste/consumption` | 0 | Konsum buchen. Body: `drinkId`, `amount` (≠ 0; negativ = Korrektur), `note?`. Aktualisiert `openAmount` des buchenden Mitglieds. |
+
+### Bierliste — Mitglieder & Salden
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/bierliste/members/balance` | 0 | Alle Mitgliedssalden, absteigend nach `openAmount`. Für alle sichtbar. |
+| GET | `/bierliste/members/balance/me` | 0 | Eigener Saldo (`openAmount`, `paidAmount`). |
+| PATCH | `/bierliste/members/:id/pay` | 0* | Zahlung abrechnen. Body: `amount`. Verschiebt von `openAmount` → `paidAmount`, legt automatisch Cashbox-`IN`-Buchung an. Wird auf `openAmount` gedeckelt. *runtime check: Bier-Admin. |
+| PATCH | `/bierliste/members/:id/amounts` | 0* | Salden direkt korrigieren. Body: `openAmount?`, `paidAmount?`. *runtime check: Bier-Admin. |
+
+### Bierliste — Kasse
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/bierliste/cashbox` | 0* | Kassenstand (live berechnet aus IN/OUT/CORRECTION) + vollständige Transaktionshistorie. *runtime check: Bier-Admin. |
+| POST | `/bierliste/cashbox` | 0* | Kassenbuchung anlegen. Body: `amount`, `direction` (`IN`/`OUT`/`CORRECTION`), `reason?`, `paymentType?`, `userIdPaid?`. *runtime check: Bier-Admin. |
+
+### Bierliste — Statistiken
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/bierliste/stats/users` | 0* | Verbrauch je Mitglied: Gesamtmenge, Gesamtkosten, `openAmount`, `paidAmount`, Aufschlüsselung nach Getränk. *runtime check: Bier-Admin. |
+
+**Bier-Admin runtime check:** `req.user.accessLevel >= BIERLISTE_ADMIN_MIN_LEVEL` (Standard: ≥ 3). Konfigurierbar per `BIERLISTE_ADMIN_MIN_LEVEL` in `.env`.
+
+---
+
 ## iCal-Feed (`GET /veranstaltungen/ical`)
 
 Öffentlicher Kalender-Feed aller Veranstaltungen im iCalendar-Format (RFC 5545). Kein JWT-Token erforderlich — direkt abonnierbar in Google Calendar, Samsung Calendar, Apple Calendar etc.
@@ -631,6 +699,74 @@ oder Downgrade auf v8 (rein CJS).
 **Strafen summary aggregation:** `GET /strafen/eintraege/summary` does not use a DB `GROUP BY` — it fetches all matching `StrafeEintrag` rows with their `strafe.betrag` and aggregates in-memory. Simple and avoids raw SQL; acceptable because penalty counts per member/year are small. The `StrafeEintraegeController` is registered before `StrafenController` in `strafen.module.ts` so NestJS resolves `/strafen/eintraege` before the parameterized `/strafen/:id`.
 
 **VeranstaltungKategorie — implicit M2M, full-replace PATCH:** Prisma implicit many-to-many was chosen over an explicit junction model because no extra data is needed on the join (just the two FKs). The `PATCH /veranstaltungen/:id` strategy uses Prisma's `set` (full replace) rather than additive `connect`/`disconnect` — this keeps the frontend contract simple: always send the complete desired set of IDs. Omitting `kategorieIds` from the PATCH body leaves the current categories unchanged. Sending `[]` explicitly removes all categories. Delete of a `VeranstaltungKategorie` is blocked server-side (HTTP 400) as long as any event references it — prevents silent orphaning of event classifications.
+
+### BierDrink
+
+Getränkekatalog.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `name` | String | unique |
+| `pricePerUnit` | Float | Preis pro Einheit in € |
+| `description`, `category` | String? | |
+| `imagePath` | String? | UUID-basierter Dateiname in `uploads/bier-drinks/` |
+| `sortOrder` | Int | default 0, für UI-Reihenfolge |
+| `active` | Boolean | default true; inaktive erscheinen nicht in der Standard-Liste |
+| `createdAt`, `updatedAt` | DateTime | |
+
+Beim Anlegen wird automatisch ein `BierFridge`-Eintrag mit `stock=0` erstellt.
+
+### BierFridge
+
+1:1 mit `BierDrink` (onDelete: Cascade). Lagerverwaltung.
+
+| Field | Type | Notes |
+|---|---|---|
+| `drinkId` | Int | PK, FK → BierDrink |
+| `stock` | Int | Aktueller Bestand, minimum 0 |
+| `minStock`, `maxStock` | Int? | Optionale Schwellenwerte für UI-Hinweise |
+| `location` | String? | Lagerort |
+| `updatedAt` | DateTime | |
+
+### BierConsumption
+
+Append-only Verbrauchslog. Negative `amount`-Werte = Korrekturbuchungen.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `memberId` | Int | FK → Member |
+| `drinkId` | Int | FK → BierDrink |
+| `amount` | Int | ≠ 0; positiv = Verbrauch, negativ = Korrektur |
+| `note` | String? | |
+| `createdAt` | DateTime | |
+
+### BierCashboxTransaction
+
+Kassenbuchungen der Bierliste-Kasse. Saldo wird live berechnet: `IN` und `CORRECTION` addieren, `OUT` subtrahiert.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | Int | PK |
+| `amount` | Float | |
+| `direction` | BierCashboxDirection | `IN` / `OUT` / `CORRECTION` |
+| `reason`, `paymentType` | String? | |
+| `createdById` | Int? | FK → Member (SetNull on delete) |
+| `userIdPaid` | Int? | FK → Member (SetNull on delete) — welches Mitglied hat gezahlt |
+| `createdAt` | DateTime | |
+
+### BierMemberBalance
+
+Saldo-Tracking pro Mitglied. Wird automatisch beim Konsum-Buchen via `upsert` aktualisiert.
+
+| Field | Type | Notes |
+|---|---|---|
+| `memberId` | Int | PK, FK → Member (onDelete: Cascade) |
+| `openAmount` | Float | Schulden (noch nicht bezahlt) |
+| `paidAmount` | Float | Kumulativ bereits bezahlt |
+
+---
 
 ## Seeder (`src/seed.ts`)
 
