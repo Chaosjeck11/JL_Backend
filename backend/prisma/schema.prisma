@@ -101,6 +101,7 @@ model BusinessYear {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   transactions       Transaction[]
+  beitragTransactions Transaction[]     @relation("BeitragYear")
   mitgliedsbeitraege Mitgliedsbeitrag[]
   strafen            StrafeEintrag[]
 }
@@ -123,6 +124,7 @@ model Transaction {
   amount               Float
   categoryId           Int
   businessYearId       Int
+  beitragYearId        Int?
   memberId             Int?
   relatedTransactionId Int?
   tag                  PaymentTag?
@@ -132,6 +134,7 @@ model Transaction {
 
   category           Category                @relation(fields: [categoryId], references: [id])
   businessYear       BusinessYear            @relation(fields: [businessYearId], references: [id])
+  beitragYear        BusinessYear?           @relation("BeitragYear", fields: [beitragYearId], references: [id])
   member             Member?                 @relation(fields: [memberId], references: [id])
   relatedTransaction Transaction?            @relation("Rueckbuchung", fields: [relatedTransactionId], references: [id])
   reversals          Transaction[]           @relation("Rueckbuchung")

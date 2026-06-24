@@ -91,7 +91,9 @@ export class MitgliedsbeitragService {
     return { message: `${created} Beitrag-Datensätze verarbeitet.` };
   }
 
-  // Called by TransactionService when an EINZAHLUNG on Mitgliedsbeitrag category is created
+  // Called by TransactionService when an EINZAHLUNG on Mitgliedsbeitrag category is created.
+  // businessYearId here is the *fee* year (Transaction.beitragYearId ?? Transaction.businessYearId),
+  // not necessarily the Kassenbuch year the transaction itself is booked into.
   async processPayment(memberId: number, businessYearId: number, amount: number) {
     const member = await this.prisma.member.findUnique({ where: { id: memberId } });
     if (!member) return;
@@ -122,7 +124,10 @@ export class MitgliedsbeitragService {
     });
   }
 
-  // Called by TransactionService after an EINZAHLUNG on Mitgliedsbeitrag is deleted
+  // Called by TransactionService after an EINZAHLUNG on Mitgliedsbeitrag is deleted or
+  // its beitragYearId changes. businessYearId here is the *fee* year — matches transactions
+  // whose effective fee year (beitragYearId ?? businessYearId) equals it, regardless of
+  // which Geschäftsjahr the transaction is actually booked into in the Kassenbuch.
   async recompute(memberId: number, businessYearId: number) {
     const beitrag = await this.prisma.mitgliedsbeitrag.findUnique({
       where: { memberId_businessYearId: { memberId, businessYearId } },
@@ -132,9 +137,12 @@ export class MitgliedsbeitragService {
     const transactions = await this.prisma.transaction.findMany({
       where: {
         memberId,
-        businessYearId,
         type: TransactionType.EINZAHLUNG,
         category: { isMitgliedsbeitrag: true },
+        OR: [
+          { beitragYearId: businessYearId },
+          { beitragYearId: null, businessYearId },
+        ],
       },
       orderBy: { date: "asc" },
     });

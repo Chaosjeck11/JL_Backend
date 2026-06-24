@@ -14,6 +14,9 @@ import { UpdateTransactionDto } from "./dto/update-transaction.dto";
 const TRANSACTION_INCLUDE = {
   category: true,
   businessYear: true,
+  beitragYear: {
+    select: { id: true, year: true },
+  },
   member: {
     select: {
       id: true,
@@ -110,7 +113,10 @@ export class TransactionService {
       include: TRANSACTION_INCLUDE,
     });
 
-    // Update Mitgliedsbeitrag when category is isMitgliedsbeitrag and member is assigned
+    // Update Mitgliedsbeitrag when category is isMitgliedsbeitrag and member is assigned.
+    // beitragYearId lets the payment be credited to a different fee-year than the
+    // Kassenbuch year the transaction itself is booked into (e.g. pay a 2023 Beitrag
+    // with a transaction booked in the 2025 Geschäftsjahr).
     if (
       dto.memberId != null &&
       dto.type === TransactionType.EINZAHLUNG &&
@@ -118,7 +124,7 @@ export class TransactionService {
     ) {
       await this.mitgliedsbeitragService.processPayment(
         dto.memberId,
-        dto.businessYearId,
+        dto.beitragYearId ?? dto.businessYearId,
         dto.amount,
       );
     }
@@ -127,12 +133,17 @@ export class TransactionService {
   }
 
   async update(id: number, dto: UpdateTransactionDto) {
-    await this.findOneOrFail(id);
+    const original = await this.findOneOrFail(id);
 
     const data: Prisma.TransactionUpdateInput = {};
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.categoryId !== undefined) data.category = { connect: { id: dto.categoryId } };
     if (dto.date !== undefined) data.date = new Date(dto.date);
+    if (dto.beitragYearId !== undefined) {
+      data.beitragYear = dto.beitragYearId
+        ? { connect: { id: dto.beitragYearId } }
+        : { disconnect: true };
+    }
     if (dto.memberId !== undefined) {
       data.member = dto.memberId ? { connect: { id: dto.memberId } } : { disconnect: true };
     }
@@ -143,11 +154,29 @@ export class TransactionService {
         : { disconnect: true };
     }
 
-    return this.prisma.transaction.update({
+    const updated = await this.prisma.transaction.update({
       where: { id },
       data,
       include: TRANSACTION_INCLUDE,
     });
+
+    // If the fee-year assignment changed, recompute both the old and new
+    // Mitgliedsbeitrag records from their respective transactions.
+    if (
+      dto.beitragYearId !== undefined &&
+      updated.memberId != null &&
+      updated.type === TransactionType.EINZAHLUNG &&
+      updated.category.isMitgliedsbeitrag
+    ) {
+      const oldEffectiveYear = original.beitragYearId ?? original.businessYearId;
+      const newEffectiveYear = updated.beitragYearId ?? updated.businessYearId;
+      await this.mitgliedsbeitragService.recompute(updated.memberId, oldEffectiveYear);
+      if (newEffectiveYear !== oldEffectiveYear) {
+        await this.mitgliedsbeitragService.recompute(updated.memberId, newEffectiveYear);
+      }
+    }
+
+    return updated;
   }
 
   async remove(id: number) {
@@ -176,7 +205,7 @@ export class TransactionService {
     ) {
       await this.mitgliedsbeitragService.recompute(
         transaction.memberId,
-        transaction.businessYearId,
+        transaction.beitragYearId ?? transaction.businessYearId,
       );
     }
 

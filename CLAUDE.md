@@ -230,6 +230,8 @@ Belongs to `BusinessYear`, `Category`, and optionally `Member`. The `type` enum:
 
 `memberId` (optional): when set on an `EINZAHLUNG` with `isMitgliedsbeitrag` category, the `Mitgliedsbeitrag` record for that member × year is updated automatically. On deletion, the record is recomputed from remaining transactions.
 
+`beitragYearId` (optional, FK → `BusinessYear`, named relation `beitragYear`): decouples the Kassenbuch year (`businessYearId`, where the transaction itself appears) from the **fee year** the payment is credited against in the `Mitgliedsbeitrag` table. Falls back to `businessYearId` when not set. Use case: a member's 2023 Beitrag is paid in 2025 — the transaction is booked into the 2025 Geschäftsjahr (`businessYearId`) so it shows up in the 2025 Kassenbuch, while `beitragYearId` is set to the 2023 `BusinessYear.id` so the payment is applied to the 2023 `Mitgliedsbeitrag` record. Settable on create and updatable via PATCH (nullable — send `null` to fall back to `businessYearId`). Response always includes `beitragYear: { id, year } | null`. Changing it via PATCH triggers a recompute of both the old and new fee-year `Mitgliedsbeitrag` records.
+
 `veranstaltungId` (optional): links the transaction to a `Veranstaltung`. Settable on create and updatable via PATCH (nullable — send `null` to unlink). Response always includes `veranstaltung: { id, name } | null`.
 
 Has a `attachments` relation to `TransactionAttachment` (`onDelete: Cascade`).
@@ -460,8 +462,8 @@ Aggregierte Sicht (offen/bezahlt pro Member × Geschäftsjahr) über `GET /straf
 | GET | `/finance/transactions` | 3 | All; optional `?businessYearId=&categoryId=&memberId=&type=` |
 | GET | `/finance/transactions/balance/:businessYearId` | 3 | Running balance array (uses live carryOver) |
 | GET | `/finance/transactions/:id` | 3 | Single transaction incl. category, businessYear, member, reversals |
-| POST | `/finance/transactions` | 4 | Create with validation; updates Mitgliedsbeitrag if applicable; optional `tag: ONLINE\|BAR` |
-| PATCH | `/finance/transactions/:id` | 4 | date, description, categoryId, memberId, tag (nullable), veranstaltungId (nullable — send null to unlink) |
+| POST | `/finance/transactions` | 4 | Create with validation; updates Mitgliedsbeitrag if applicable; optional `tag: ONLINE\|BAR`; optional `beitragYearId` (fee year, defaults to `businessYearId`) |
+| PATCH | `/finance/transactions/:id` | 4 | date, description, categoryId, memberId, tag (nullable), beitragYearId (nullable — send null to fall back to businessYearId; recomputes old + new fee-year Mitgliedsbeitrag), veranstaltungId (nullable — send null to unlink) |
 | DELETE | `/finance/transactions/:id` | 4 | Only if no reversals; recomputes Mitgliedsbeitrag if applicable |
 
 ### Finance — Mitgliedsbeiträge
@@ -689,6 +691,8 @@ oder Downgrade auf v8 (rein CJS).
 **Live carryOver:** `BusinessYear.carryOver` in the DB is only the seed for the oldest year (manually adjustable via PATCH). All other years' `carryOver` values are computed on every `findOne` call by walking prior years chronologically. This ensures retroactive transaction changes are always reflected.
 
 **Mitgliedsbeitrag auto-payment:** Payments are allocated JL-first. Status transitions automatically: `AUSSTEHEND → TEILWEISE → BEZAHLT`. Manual override available via PATCH.
+
+**Kassenbuch year vs. fee year (`beitragYearId`):** `Transaction.businessYearId` always determines which Geschäftsjahr a booking shows up in within the Kassenbuch. `Transaction.beitragYearId` (nullable, falls back to `businessYearId`) determines which `Mitgliedsbeitrag` (member × fee-year) the payment is credited against — `MitgliedsbeitragService.processPayment()`/`recompute()` are always called with the effective fee year (`beitragYearId ?? businessYearId`), never with `businessYearId` directly. This allows a 2023 Mitgliedsbeitrag to be paid via a transaction booked into the 2025 Kassenbuch. `recompute()` matches transactions by effective fee year (`beitragYearId = target OR (beitragYearId IS NULL AND businessYearId = target)`), not by strict `businessYearId`.
 
 **inactiveSince vs active:** `active` is the fast boolean flag. `inactiveSince` records the exact timestamp and is used to determine whether a member owed fees for a given year (if they were active at the year's start date).
 

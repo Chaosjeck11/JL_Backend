@@ -7,6 +7,7 @@ export class CreateTransactionDto {
   amount: number;
   categoryId: number;
   businessYearId: number;
+  beitragYearId?: number;
   memberId?: number;
   relatedTransactionId?: number;
   tag?: PaymentTag;
